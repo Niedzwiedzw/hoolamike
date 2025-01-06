@@ -66,7 +66,7 @@ impl ProcessArchive for ArchiveHandle {
                                 listed
                                     .remove(*expected)
                                     .then(|| expected.to_owned().pipe(|v| v.to_owned()))
-                                    .with_context(|| format!("path {expected:?} not found in {listed:?}"))
+                                    .with_context(|| format!("path {expected:?} not found in {listed:#?}"))
                             })
                             .collect::<Result<HashSet<PathBuf>>>()
                             .context("some paths were not found")

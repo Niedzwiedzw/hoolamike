@@ -4,16 +4,19 @@ use {hooks::IoHook, indicatif::ProgressStyle, tracing_indicatif::span_ext::Indic
 
 pub(crate) fn io_progress_style() -> ProgressStyle {
     ProgressStyle::with_template(
-        "{span_child_prefix:.bold}▕{bar:.blue}▏({bytes}/{total_bytes} {bytes_per_sec} ETA {eta}) {span_name:.blue}({span_fields:.yellow})",
+        "{span_child_prefix:.bold}▕{bar:.blue}▏({bytes}/{total_bytes} {bytes_per_sec} ETA {eta:.grey} ELAPSED {elapsed:.yellow}) \
+         {span_name:.blue}({span_fields:.yellow})",
     )
     .unwrap()
     .progress_chars("█▇▆▅▄▃▂▁  ")
 }
 
 pub(crate) fn count_progress_style() -> ProgressStyle {
-    ProgressStyle::with_template("{span_child_prefix:.bold}▕{bar:.green}▏({pos}/{len} ETA {eta}) {span_name:.green}({span_fields:.yellow})")
-        .unwrap()
-        .progress_chars("█▇▆▅▄▃▂▁  ")
+    ProgressStyle::with_template(
+        "{span_child_prefix:.bold}▕{bar:.green}▏({pos}/{len} ETA {eta:.grey} ELAPSED {elapsed:.yellow}) {span_name:.green}({span_fields:.yellow})",
+    )
+    .unwrap()
+    .progress_chars("█▇▆▅▄▃▂▁  ")
 }
 
 #[extension_traits::extension(pub trait IndicatifWrapIoExt)]

@@ -142,15 +142,14 @@ impl QueuedArchiveService {
 
 #[instrument]
 pub fn prepare_archive_blocking(source: &SourceKind, archive_path: &Path, extension: Option<&OsStr>) -> anyhow::Result<(u64, Extracted)> {
-    ArchiveHandle::guess(source.as_ref(), extension)
-        .and_then(|mut archive| {
-            archive.get_handle(archive_path).and_then(|mut handle| {
-                handle
-                    .size()
-                    .and_then(|size| handle.seek_with_temp_file_blocking_raw(size))
-            })
+    ArchiveHandle::with_guessed(source.as_ref(), extension, |mut archive| {
+        archive.get_handle(archive_path).and_then(|mut handle| {
+            handle
+                .size()
+                .and_then(|size| handle.seek_with_temp_file_blocking_raw(size))
         })
-        .with_context(|| format!("preparing [{source:?}] -> {archive_path:?}"))
+    })
+    .with_context(|| format!("preparing [{source:?}] -> {archive_path:?}"))
 }
 
 #[instrument(skip(_computation_permits))]

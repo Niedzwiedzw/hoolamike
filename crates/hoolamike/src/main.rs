@@ -137,10 +137,15 @@ fn setup_logging(logging_mode: LoggingMode) -> Option<impl Drop> {
                 .unwrap_or(50)
                 .div(2)
                 .pipe(|half_height| {
-                    IndicatifLayer::new().with_max_progress_bars(
-                        half_height,
-                        Some(indicatif::ProgressStyle::with_template("...and {pending_progress_bars} more not shown above.").unwrap()),
-                    )
+                    IndicatifLayer::new()
+                        .with_progress_style(
+                            indicatif::ProgressStyle::with_template("{span_child_prefix:.bold}▕({elapsed:.yellow}) {span_name:.blue}({span_fields:.yellow})")
+                                .expect("bad progress style"),
+                        )
+                        .with_max_progress_bars(
+                            half_height,
+                            Some(indicatif::ProgressStyle::with_template("...and {pending_progress_bars} more not shown above.").unwrap()),
+                        )
                 });
             // let indicatif_layer = ;
             let subscriber = tracing_subscriber::registry()

@@ -9,6 +9,12 @@ use {
 
 pub mod dxgi_format_mapping;
 
+macro_rules! spanned {
+    ($expr:expr) => {
+        tracing::info_span!(stringify!($expr)).in_scope(|| $expr)
+    };
+}
+
 #[tracing::instrument(skip(input, output))]
 pub fn resize_dds<R, W>(input: &mut R, target_width: u32, target_height: u32, target_format: DXGIFormat, target_mipmaps: u32, output: &mut W) -> Result<u64>
 where
@@ -22,10 +28,10 @@ where
     let target_format = self::dxgi_format_mapping::map_dxgi_format(target_format);
 
     Vec::new()
-        .pipe(|mut buf| input.read_to_end(&mut buf).map(|_| buf))
+        .pipe(|mut buf| spanned!(input.read_to_end(&mut buf)).map(|_| buf))
         .context("reading bytes")
         .and_then(|bytes| {
-            let tex_metadata = TexMetadata::from_dds(&bytes, dds_flags, None).context("reading tex metadata")?;
+            let tex_metadata = spanned!(TexMetadata::from_dds(&bytes, dds_flags, None)).context("reading tex metadata")?;
             Ok(())
                 .and_then(|_| {
                     Ok(())
@@ -33,11 +39,9 @@ where
                             directxtex::ScratchImage::load_dds(&bytes, dds_flags, None, None)
                                 .context("loading dds")
                                 .and_then(|image| match tex_metadata.format.is_compressed() {
-                                    true => image
-                                        .decompress(DXGI_FORMAT::DXGI_FORMAT_R32G32B32A32_FLOAT)
+                                    true => spanned!(image.decompress(DXGI_FORMAT::DXGI_FORMAT_R32G32B32A32_FLOAT))
                                         .context("decompressing image into DXGI_FORMAT::DXGI_FORMAT_R32G32B32A32_FLOAT"),
-                                    false => image
-                                        .convert(DXGI_FORMAT::DXGI_FORMAT_R32G32B32A32_FLOAT, tex_filter_flags, TEX_THRESHOLD_DEFAULT)
+                                    false => spanned!(image.convert(DXGI_FORMAT::DXGI_FORMAT_R32G32B32A32_FLOAT, tex_filter_flags, TEX_THRESHOLD_DEFAULT))
                                         .context("converting image DXGI_FORMAT::DXGI_FORMAT_R32G32B32A32_FLOAT"),
                                 })
                                 .context("loading image")
@@ -45,29 +49,35 @@ where
                         .and_then(|image| {
                             Ok(image)
                                 .and_then(|image| {
-                                    image
-                                        .resize(
-                                            target_width.to_usize().context("bad target_width")?,
-                                            target_height.to_usize().context("bad target_height")?,
-                                            tex_filter_flags,
-                                        )
-                                        .context("resizing")
+                                    let (width, height) = (
+                                        target_width.to_usize().context("bad target_width")?,
+                                        target_height.to_usize().context("bad target_height")?,
+                                    );
+                                    spanned!(image.resize(width, height, tex_filter_flags,)).context("resizing")
                                 })
-                                .and_then(|resized| match target_mipmaps {
-                                    1 => Ok(resized),
-                                    target_mipmaps => resized
-                                        .generate_mip_maps(tex_filter_flags, target_mipmaps.to_usize().context("bad target_mipmaps")?)
-                                        .context("generating mip maps"),
+                                .and_then(|resized| {
+                                    let target_mipmaps = target_mipmaps.to_usize().context("bad target_mipmaps")?;
+
+                                    match target_mipmaps {
+                                        1 => Ok(resized),
+                                        target_mipmaps => spanned!(resized.generate_mip_maps(tex_filter_flags, target_mipmaps)).context("generating mip maps"),
+                                    }
                                 })
                                 .context("modifying image")
                         })
                         .and_then(|image| match target_format.is_compressed() {
-                            true => image
-                                .compress(target_format, tex_compress_flags, TEX_THRESHOLD_DEFAULT)
-                                .with_context(|| format!("compressing using target_format={target_format:?}"))
-                                .context("compressing image"),
-                            false => image
-                                .convert(target_format, tex_filter_flags, TEX_THRESHOLD_DEFAULT)
+                            true => {
+                                let tex_compress_flags = tex_compress_flags.pipe(|tex_compress_flags| match target_format {
+                                    DXGI_FORMAT::DXGI_FORMAT_BC7_TYPELESS | DXGI_FORMAT::DXGI_FORMAT_BC7_UNORM | DXGI_FORMAT::DXGI_FORMAT_BC7_UNORM_SRGB => {
+                                        tex_compress_flags.union(TEX_COMPRESS_FLAGS::TEX_COMPRESS_BC7_QUICK)
+                                    }
+                                    _ => tex_compress_flags,
+                                });
+                                spanned!(image.compress(target_format, tex_compress_flags, TEX_THRESHOLD_DEFAULT))
+                                    .with_context(|| format!("compressing using target_format={target_format:?}"))
+                                    .context("compressing image")
+                            }
+                            false => spanned!(image.convert(target_format, tex_filter_flags, TEX_THRESHOLD_DEFAULT))
                                 .with_context(|| format!("compressing using target_format={target_format:?}"))
                                 .context("compressing image"),
                         })
@@ -76,7 +86,7 @@ where
                     image
                         .images()
                         .pipe(|images| {
-                            directxtex::save_dds(
+                            spanned!(directxtex::save_dds(
                                 images,
                                 &tex_metadata.tap_mut(|metadata| {
                                     metadata.width = target_width as _;
@@ -85,7 +95,7 @@ where
                                     metadata.format = target_format;
                                 }),
                                 dds_flags,
-                            )
+                            ))
                             .with_context(|| format!("saving [{}] images as dds", images.len()))
                         })
                         .context("saving dds image to bytes")
