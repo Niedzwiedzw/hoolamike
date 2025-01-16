@@ -12,6 +12,7 @@ anyhow.workspace = true
 clap.workspace = true
 derivative.workspace = true
 extension-traits.workspace = true
+hound = "3.5.1"
 itertools.workspace = true
 mp3lame-encoder = "0.2.1"
 symphonia = { version = "0.5.4", features = ["all-codecs", "opt-simd"] }

@@ -7,8 +7,10 @@ use {
     itertools::Itertools,
     mp3lame_encoder::MonoPcm,
     std::{
+        convert::identity,
         fs::File,
         io::Write,
+        iter::repeat,
         path::{Path, PathBuf},
     },
     symphonia::core::{
@@ -29,7 +31,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 struct FromTo {
     /// path to source file
     from: PathBuf,
@@ -37,7 +39,7 @@ struct FromTo {
     to: PathBuf,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum Commands {
     ConvertStereoMP3ToMono(FromTo),
     ConvertOGGToWAV(FromTo),
@@ -75,7 +77,14 @@ impl FormatReaderIterator {
             .iter()
             .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
             .context("no track could be decoded")?;
-
+        info!(
+            "selected track [{}]",
+            format!("{track:#?}")
+                .chars()
+                .take(1024)
+                .chain(repeat('.').take(3))
+                .collect::<String>()
+        );
         let decoder = symphonia::default::get_codecs()
             .make(&track.codec_params, &DecoderOptions::default())
             .with_context(|| format!("building a decoder for track [{track:#?}]"))?;
@@ -245,94 +254,132 @@ impl<T> std::result::Result<T, mp3lame_encoder::BuildError> {
 //     }
 // }
 
+const SAMPLE_RATE: u32 = 44_100;
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let Cli { command } = Cli::parse();
 
     debug!("debug logging on");
+    let _span = info_span!("running", ?command).entered();
     match command {
-        Commands::ConvertStereoMP3ToMono(FromTo { from, to }) => {
-            let _span = info_span!("ConvertStereoMP3ToMono", ?from, ?to).entered();
-            FormatReaderIterator::from_file(&from).and_then(|mut reader| -> Result<_> {
-                use mp3lame_encoder::{Builder, FlushNoGap};
+        Commands::ConvertStereoMP3ToMono(FromTo { from, to }) => FormatReaderIterator::from_file(&from).and_then(|mut reader| -> Result<_> {
+            use mp3lame_encoder::{Builder, FlushNoGap};
 
-                let mut output = std::fs::OpenOptions::new()
-                    .write(true)
-                    .truncate(true)
-                    .create(true)
-                    .open(&to)
-                    .with_context(|| format!("opening output file: [{to:?}]"))?;
+            let mut output = std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(&to)
+                .with_context(|| format!("opening output file: [{to:?}]"))?;
 
-                let mut buffer = Vec::new();
-                Builder::new()
-                    .context("creating mp3 lame encoder builder")
-                    .and_then(|mut encoder| {
-                        encoder
-                            .set_num_channels(1)
-                            .for_anyhow()
-                            .context("set_num_channels")?;
-                        encoder
-                            .set_sample_rate(44_100)
-                            .for_anyhow()
-                            .context("set_sample_rate")?;
-                        encoder
-                            .set_brate(mp3lame_encoder::Bitrate::Kbps192)
-                            .for_anyhow()
-                            .context("setting bitrate")?;
-                        encoder
-                            .set_quality(mp3lame_encoder::Quality::Best)
-                            .for_anyhow()
-                            .context("set quality")?;
-                        encoder
-                            .build()
-                            .for_anyhow()
-                            .context("building lame encoder")
+            let mut buffer = Vec::new();
+            Builder::new()
+                .context("creating mp3 lame encoder builder")
+                .and_then(|mut encoder| {
+                    encoder
+                        .set_num_channels(1)
+                        .for_anyhow()
+                        .context("set_num_channels")?;
+                    encoder
+                        .set_sample_rate(SAMPLE_RATE)
+                        .for_anyhow()
+                        .context("set_sample_rate")?;
+                    encoder
+                        .set_brate(mp3lame_encoder::Bitrate::Kbps192)
+                        .for_anyhow()
+                        .context("setting bitrate")?;
+                    encoder
+                        .set_quality(mp3lame_encoder::Quality::Best)
+                        .for_anyhow()
+                        .context("set quality")?;
+                    encoder
+                        .build()
+                        .for_anyhow()
+                        .context("building lame encoder")
+                })
+                .tap_ok(|encoder| {
+                    tracing::info!(
+                        encoder_sample_rate = encoder.sample_rate(),
+                        encoder_num_channels = encoder.num_channels(),
+                        "created mp3 lame encoder"
+                    );
+                })
+                .and_then(|mut encoder| {
+                    reader
+                        .try_for_each(|chunk| {
+                            chunk
+                                .and_then(|chunk| chunk.downmix_to_mono())
+                                .and_then(|chunk| {
+                                    buffer.reserve(mp3lame_encoder::max_required_buffer_size(chunk.len()));
+                                    encoder
+                                        .encode_to_vec(MonoPcm(chunk.as_slice()), &mut buffer)
+                                        .map_err(|e| anyhow::anyhow!("{e:#?}"))
+                                        .context("encoding mp3 chunk")
+                                        .inspect(|size| debug!("encoded chunk of size [{size}]"))
+                                        .and_then(|size| {
+                                            output
+                                                .write_all(&buffer)
+                                                .context("writing chunk of encoded mp3 to file")
+                                                .tap_ok(|_| buffer.clear())
+                                                .tap_ok(|_| debug!("wrote [{size}]"))
+                                        })
+                                })
+                        })
+                        .and_then(|_| {
+                            encoder
+                                .flush_to_vec::<FlushNoGap>(&mut buffer)
+                                .map_err(|e| anyhow::anyhow!("{e:#?}"))
+                                .context("finalizing the encoder")
+                                .and_then(|size| {
+                                    output
+                                        .write_all(&buffer)
+                                        .context("writing final chunk to file")
+                                        .tap_ok(|_| debug!("wrote [{size}]"))
+                                })
+                        })
+                        .tap_ok(|_| info!("[DONE]"))
+                })
+        }),
+        Commands::ConvertOGGToWAV(FromTo { from, to }) => FormatReaderIterator::from_file(&from).and_then(|mut reader| {
+            let mut reader = reader.peekable();
+            let (source_sample_rate, channel_count) = reader
+                .peek()
+                .map(|chunk| {
+                    chunk
+                        .as_ref()
+                        .map_err(|e| anyhow::anyhow!("{e:#?}"))
+                        .map(|c| (c.spec.rate, c.spec.channels.count()))
+                })
+                .context("input is empty")
+                .and_then(identity)
+                .context("deducing source spec")?;
+            let mut writer = hound::WavWriter::create(
+                &to,
+                hound::WavSpec {
+                    channels: channel_count as _,
+                    sample_rate: source_sample_rate,
+                    bits_per_sample: 32,
+                    sample_format: hound::SampleFormat::Float,
+                }
+                .tap(|spec| tracing::debug!(?spec, "creating wav writer with spec")),
+            )
+            .context("creating WAV writer")?;
+            reader
+                .try_for_each(|chunk| {
+                    chunk.and_then(|chunk| {
+                        chunk
+                            .sample_buffer
+                            .samples()
+                            .iter()
+                            .try_for_each(|s| writer.write_sample(*s).context("wrtigin sample"))
                     })
-                    .tap_ok(|encoder| {
-                        tracing::info!(
-                            encoder_sample_rate = encoder.sample_rate(),
-                            encoder_num_channels = encoder.num_channels(),
-                            "created mp3 lame encoder"
-                        );
-                    })
-                    .and_then(|mut encoder| {
-                        reader
-                            .try_for_each(|chunk| {
-                                chunk
-                                    .and_then(|chunk| chunk.downmix_to_mono())
-                                    .and_then(|chunk| {
-                                        buffer.reserve(mp3lame_encoder::max_required_buffer_size(chunk.len()));
-                                        encoder
-                                            .encode_to_vec(MonoPcm(chunk.as_slice()), &mut buffer)
-                                            .map_err(|e| anyhow::anyhow!("{e:#?}"))
-                                            .context("encoding mp3 chunk")
-                                            .inspect(|size| debug!("encoded chunk of size [{size}]"))
-                                            .and_then(|size| {
-                                                output
-                                                    .write_all(&buffer)
-                                                    .context("writing chunk of encoded mp3 to file")
-                                                    .tap_ok(|_| buffer.clear())
-                                                    .tap_ok(|_| info!("wrote [{size}]"))
-                                            })
-                                    })
-                            })
-                            .and_then(|_| {
-                                encoder
-                                    .flush_to_vec::<FlushNoGap>(&mut buffer)
-                                    .map_err(|e| anyhow::anyhow!("{e:#?}"))
-                                    .context("finalizing the encoder")
-                                    .and_then(|size| {
-                                        output
-                                            .write_all(&buffer)
-                                            .context("writing final chunk to file")
-                                            .tap_ok(|_| info!("wrote [{size}]"))
-                                    })
-                            })
-                            .tap_ok(|_| info!("[DONE]"))
-                    })
-            })
-        }
-        Commands::ConvertOGGToWAV(paths) => todo!(),
+                })
+                .context("writing reencoded wav data")
+                .and_then(|_| writer.finalize().context("finalizing the writer"))?;
+            info!("[DONE]");
+            Ok(())
+        }),
         Commands::ResampleOGG(paths) => todo!(),
     }
 }
