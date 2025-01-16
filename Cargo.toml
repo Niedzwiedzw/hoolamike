@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/bsa-cli",
+  "crates/bsa-cli", "crates/hoola-audio",
   "crates/hoolamike",
   "crates/tokio-cached-future",
   "crates/wrapped-7zip",

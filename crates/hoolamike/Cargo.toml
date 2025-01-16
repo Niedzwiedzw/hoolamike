@@ -79,6 +79,7 @@ serde_yaml.workspace = true
 sevenz-rust.workspace = true
 similar = { version = "2.6.0", features = ["inline"] }
 static_assertions = { version = "1.1.0", features = ["nightly"] }
+symphonia = { version = "0.5.4", features = ["all-codecs"] }
 tabled.workspace = true
 tap.workspace = true
 tempfile.workspace = true
