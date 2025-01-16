@@ -3,13 +3,13 @@
 
 use {
     anyhow::{bail, Context, Result},
+    chunk_while::IteratorChunkWhileExt,
     clap::{Args, Parser, Subcommand},
     itertools::Itertools,
     mp3lame_encoder::MonoPcm,
     num::ToPrimitive,
     std::{
         convert::identity,
-        fs::File,
         io::{BufWriter, Write},
         iter::repeat,
         num::{NonZeroU32, NonZeroU8},
@@ -26,6 +26,8 @@ use {
     tracing::{debug, info, info_span, instrument, warn},
     vorbis_rs::VorbisEncoderBuilder,
 };
+
+pub mod chunk_while;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -132,6 +134,10 @@ impl FormatReaderIterator {
                         packet_track_id=%packet.track_id(),
                         "next packet",
                     );
+                    if packet.dur() == 0 {
+                        tracing::warn!("skipping empty chunk");
+                        continue;
+                    }
                     if packet.track_id() == self.selected_track {
                         return Ok(Some(packet));
                     } else {
@@ -175,8 +181,27 @@ struct DecodedChunk {
 }
 
 impl DecodedChunk {
+    /// length of a single channel
+    pub fn single_channel_length(&self) -> usize {
+        let channel_count = self.spec.channels.count();
+        if channel_count == 0 {
+            panic!("what? channel count == 0?");
+        }
+        self.sample_buffer.samples().len() / channel_count
+    }
+
+    pub fn split_channels(&self) -> impl Iterator<Item = impl Iterator<Item = &f32> + '_> + '_ {
+        let channels = self.spec.channels.count();
+        (0..channels).map(move |channel| {
+            self.sample_buffer
+                .samples()
+                .iter()
+                .skip(channel)
+                .step_by(channels)
+        })
+    }
     #[instrument(level = "DEBUG")]
-    fn downmix_to_mono(&self) -> Result<Vec<f32>> {
+    pub fn downmix_to_mono(&self) -> Result<Vec<f32>> {
         let channel_count = self.spec.channels.count();
         let mut buf: Vec<f32> = Vec::with_capacity(channel_count);
         match channel_count {
@@ -351,7 +376,7 @@ fn main() -> Result<()> {
                         .tap_ok(|_| info!("[DONE]"))
                 })
         }),
-        Commands::ConvertOGGToWAV(FromTo { from, to }) => FormatReaderIterator::from_file(&from).and_then(|mut reader| {
+        Commands::ConvertOGGToWAV(FromTo { from, to }) => FormatReaderIterator::from_file(&from).and_then(|reader| {
             let mut reader = reader.peekable();
             let (source_sample_rate, channel_count) = reader
                 .peek()
@@ -429,13 +454,50 @@ fn main() -> Result<()> {
                 .and_then(|mut e| e.build().context("finalizing vorbis encoder"))
                 .context("creating vorbis encoder")
             })?;
+            let mut buffers = (0..original_channel_count)
+                .map(|_| Vec::new())
+                .collect_vec();
+            const REASONABLE_OGG_BLOCK_SIZE: usize = 2048;
             reader
+                .chunk_while(|chunk| {
+                    chunk
+                        .iter()
+                        .map(|c| {
+                            c.as_ref()
+                                .map(|c| c.single_channel_length())
+                                .unwrap_or_default()
+                        })
+                        .sum::<usize>()
+                        < REASONABLE_OGG_BLOCK_SIZE
+                })
                 .try_for_each(|chunk| {
-                    chunk.and_then(|chunk| {
-                        encoder
-                            .encode_audio_block([chunk.sample_buffer.samples()])
-                            .context("encoding sample")
-                    })
+                    buffers.iter_mut().for_each(|b| b.clear());
+                    chunk
+                        .into_iter()
+                        .collect::<Result<Vec<_>>>()
+                        .map(|chunk| {
+                            chunk.into_iter().for_each(|chunk| {
+                                chunk
+                                    .split_channels()
+                                    .zip(buffers.iter_mut())
+                                    .for_each(|(channel, buffer)| {
+                                        buffer.extend(channel.copied());
+                                    });
+                            })
+                        })
+                        .and_then(|_| {
+                            tracing::debug!(
+                                samples = buffers
+                                    .first()
+                                    .as_ref()
+                                    .map(|b| b.len())
+                                    .unwrap_or_default(),
+                                "wrote to buffer"
+                            );
+                            encoder
+                                .encode_audio_block(&buffers)
+                                .context("encoding sample")
+                        })
                 })
                 .and_then(|_| encoder.finish().context("finalizing encoder"))
                 .and_then(|w| w.flush().context("flushing the output"))
