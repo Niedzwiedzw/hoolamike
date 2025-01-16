@@ -15,7 +15,10 @@ extension-traits.workspace = true
 hound = "3.5.1"
 itertools.workspace = true
 mp3lame-encoder = "0.2.1"
+num.workspace = true
+ogg = "0.9.2"
 symphonia = { version = "0.5.4", features = ["all-codecs", "opt-simd"] }
 tap.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+vorbis_rs = "0.5.5"

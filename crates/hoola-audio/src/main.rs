@@ -6,11 +6,13 @@ use {
     clap::{Args, Parser, Subcommand},
     itertools::Itertools,
     mp3lame_encoder::MonoPcm,
+    num::ToPrimitive,
     std::{
         convert::identity,
         fs::File,
-        io::Write,
+        io::{BufWriter, Write},
         iter::repeat,
+        num::{NonZeroU32, NonZeroU8},
         path::{Path, PathBuf},
     },
     symphonia::core::{
@@ -22,6 +24,7 @@ use {
     },
     tap::prelude::*,
     tracing::{debug, info, info_span, instrument, warn},
+    vorbis_rs::VorbisEncoderBuilder,
 };
 
 #[derive(Parser)]
@@ -43,7 +46,13 @@ struct FromTo {
 enum Commands {
     ConvertStereoMP3ToMono(FromTo),
     ConvertOGGToWAV(FromTo),
-    ResampleOGG(FromTo),
+    ResampleOGG {
+        #[command(flatten)]
+        context: FromTo,
+        /// target sample frequency
+        #[arg(long)]
+        target_frequency: u32,
+    },
 }
 
 #[derive(derivative::Derivative)]
@@ -271,7 +280,8 @@ fn main() -> Result<()> {
                 .truncate(true)
                 .create(true)
                 .open(&to)
-                .with_context(|| format!("opening output file: [{to:?}]"))?;
+                .with_context(|| format!("opening output file: [{to:?}]"))?
+                .pipe(BufWriter::new);
 
             let mut buffer = Vec::new();
             Builder::new()
@@ -380,6 +390,56 @@ fn main() -> Result<()> {
             info!("[DONE]");
             Ok(())
         }),
-        Commands::ResampleOGG(paths) => todo!(),
+        Commands::ResampleOGG {
+            context: FromTo { from, to },
+            target_frequency,
+        } => {
+            let mut reader = FormatReaderIterator::from_file(&from)
+                .context("opening source file")?
+                .peekable();
+            let (original_rate, original_channel_count) = reader
+                .peek()
+                .map(|r| {
+                    r.as_ref()
+                        .map_err(|e| anyhow::anyhow!("{e:#?}"))
+                        .map(|r| (r.spec.rate, r.spec.channels.count()))
+                })
+                .context("input is empty?")
+                .and_then(identity)
+                .context("deducing original metadata")?;
+            let _source_span = info_span!("with_source_info", %original_rate, %original_channel_count).entered();
+            let mut output = std::fs::File::create(&to)
+                .context("opening output file for writing")?
+                .pipe(BufWriter::new);
+            let mut encoder = info_span!("building_vobis_encoder").in_scope(|| -> Result<_> {
+                VorbisEncoderBuilder::new(
+                    target_frequency
+                        .pipe(NonZeroU32::new)
+                        .context("zero sampling frequency?")
+                        .tap_ok(|target_frequency| info!(%target_frequency))?,
+                    original_channel_count
+                        .to_u8()
+                        .context("too many channels (max is 255)")
+                        .and_then(|channels| NonZeroU8::new(channels).context("no channels"))
+                        .context("validating input channels")
+                        .tap_ok(|target_channel_count| info!(%target_channel_count))?,
+                    &mut output,
+                )
+                .context("crating vorbis encoder builder")
+                .and_then(|mut e| e.build().context("finalizing vorbis encoder"))
+                .context("creating vorbis encoder")
+            })?;
+            reader
+                .try_for_each(|chunk| {
+                    chunk.and_then(|chunk| {
+                        encoder
+                            .encode_audio_block([chunk.sample_buffer.samples()])
+                            .context("encoding sample")
+                    })
+                })
+                .and_then(|_| encoder.finish().context("finalizing encoder"))
+                .and_then(|w| w.flush().context("flushing the output"))
+                .with_context(|| format!("resampling [from:?] -> [{to:?}]"))
+        }
     }
 }
