@@ -66,7 +66,7 @@ enum Commands {
     ///
     /// **Alias:** `ttw`
     #[clap(alias = "ttw")]
-    TaleOfTwoWastelands(crate::extensions::tale_of_two_wastelands_installer::CliConfig),
+    TaleOfTwoWastelands(extensions::tale_of_two_wastelands_installer::CliConfig),
     /// Applies 4GB patch to FalloutNV.exe (replaces FNVPatcher.exe/FNVPatcher.py etc).
     ///
     /// **Alias:** `fnv-patch`
@@ -96,8 +96,8 @@ enum Commands {
     /// make sure to star his repo: https://github.com/Omni-guides/Wabbajack-Modlist-Linux
     PostInstallFixup,
     /// exposes the bare archive handling functionality used in hoolamike, useful for debugging
-    Archive(self::archive_cli::ArchiveCliCommand),
-    Audio(self::audio_cli::AudioCliCommand),
+    Archive(archive_cli::ArchiveCliCommand),
+    Audio(audio_cli::AudioCliCommand),
 }
 
 pub mod read_wrappers;
@@ -214,7 +214,7 @@ async fn async_main() -> Result<()> {
     let _guard = setup_logging(logging_mode);
 
     match command {
-        Commands::FalloutNewVegasPatcher { at_path } => crate::extensions::fallout_new_vegas_4gb_patch::patch_fallout_new_vegas(&at_path)
+        Commands::FalloutNewVegasPatcher { at_path } => extensions::fallout_new_vegas_4gb_patch::patch_fallout_new_vegas(&at_path)
             .context("applying patch")
             .tap_ok(|_| info!("[🩹] Fallout New Vegas 4GB Patch is applied (no need to run FNVPatch.exe or anything like that)")),
         Commands::PostInstallFixup => {
@@ -236,7 +236,7 @@ async fn async_main() -> Result<()> {
             .map(|config| println!("{config}")),
         Commands::Install { debug } => {
             let (config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
-            tracing::info!("found config at [{}]", config_path.display());
+            info!("found config at [{}]", config_path.display());
 
             install_modlist::install_modlist(config, debug)
                 .await
@@ -268,7 +268,7 @@ async fn async_main() -> Result<()> {
             .pipe(|c| c.clone().run().with_context(|| format!("running\n{c:#?}"))),
         Commands::TaleOfTwoWastelands(cli_config) => {
             let (_config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
-            crate::extensions::tale_of_two_wastelands_installer::install(cli_config, config)
+            extensions::tale_of_two_wastelands_installer::install(cli_config, config)
         }
     }
     .with_context(|| {
@@ -286,7 +286,6 @@ async fn async_main() -> Result<()> {
 async fn main() -> Result<()> {
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_cpus::get().saturating_sub(2).max(1))
-        .build_global()
-        .unwrap();
+        .build_global()?;
     async_main().await
 }
