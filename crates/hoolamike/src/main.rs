@@ -90,7 +90,7 @@ enum Commands {
         #[command(flatten)]
         debug: DebugHelpers,
     },
-    /// prints prints default config. save it and modify to your liking
+    /// prints default config. save it and modify to your liking
     PrintDefaultConfig,
     /// runs post-install fixup - wouldn't be possible without extensive research done by Omni
     /// make sure to star his repo: https://github.com/Omni-guides/Wabbajack-Modlist-Linux
