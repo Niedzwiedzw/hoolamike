@@ -62,9 +62,15 @@ struct HoolamikeDebug {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Emulats TTW installer functionality (make sure to add installer variables to hoolamike.yaml)
+    /// Emulates TTW installer functionality (make sure to add installer variables to hoolamike.yaml).
+    ///
+    /// **Alias:** `ttw`
+    #[clap(alias = "ttw")]
     TaleOfTwoWastelands(crate::extensions::tale_of_two_wastelands_installer::CliConfig),
-    /// applies 4GB patch to FalloutNV.exe (replaces FNVPatcher.exe/FNVPatcher.py etc )
+    /// Applies 4GB patch to FalloutNV.exe (replaces FNVPatcher.exe/FNVPatcher.py etc).
+    ///
+    /// **Alias:** `fnv-patch`
+    #[clap(alias = "fnv-patch")]
     FalloutNewVegasPatcher {
         /// path to FalloutNV.exe
         at_path: PathBuf,
