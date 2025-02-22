@@ -62,9 +62,8 @@ If you face any issues, consult the **[Discord Community](https://discord.gg/xYH
 ## 🚧 Compiling from source
 1. Install the Rust toolchain: Visit https://rustup.rs/ to install Rust.
 2. Clone the Hoolamike repository: Run git clone https://github.com/Niedzwiedzw/hoolamike to download the project files.
-3. Switch to the nightly Rust compiler: Run rustup default nightly to set the nightly version as default. This step is required because Hoolamike uses features available only in the nightly version of Rust.
-4. Install Hoolamike using Cargo: Navigate to the repository and execute `cargo install --path crates/hoolamike`.
-5. Verify the installation: Once installed, the binary will typically be located in ~/.cargo/bin/. Ensure the binary is in your system's $PATH, or reference it directly by running ~/.cargo/bin/hoolamike. You should see a help message indicating successful installation.## 💬 Join the Community
+3. Install Hoolamike using Cargo: Navigate to the repository and execute `cargo install --path crates/hoolamike`.
+4. Verify the installation: Once installed, the binary will typically be located in ~/.cargo/bin/. Ensure the binary is in your system's $PATH, or reference it directly by running ~/.cargo/bin/hoolamike. You should see a help message indicating successful installation.## 💬 Join the Community
 
 Whether you're here to wishlist modlists, contribute, or just chat with fellow enthusiasts, our **[Discord Community](https://discord.gg/xYHjpKX3YP)** is open for you! 🎉
 

@@ -148,7 +148,7 @@ fn must_be_non_zero_usize(value: i64) -> Result<NonZeroUsize> {
 }
 
 fn read_at_most<R: Seek + Read>(mut source: R, mut buf: &mut [u8], remaining_length: usize) -> std::io::Result<Option<NonZeroUsize>> {
-    buf.take_mut(..remaining_length)
+    buf.split_off_mut(..remaining_length)
         .unwrap_or(buf)
         .pipe(|buf| source.read_exact(buf).map(|_| buf.len()))
         .map(NonZeroUsize::new)
