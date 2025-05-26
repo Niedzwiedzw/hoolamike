@@ -52,7 +52,7 @@ impl ProcessArchive for ArchiveHandle {
             .context("listing archive")
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all, fields(count=%paths.len()))]
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         info_span!("getting_many_handles_compress_tools").in_scope(|| {
             self.list_paths().and_then(|listed| {

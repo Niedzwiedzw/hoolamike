@@ -6,8 +6,8 @@ use {
         utils::spawn_rayon,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
-    std::io::{Read, Write},
-    tracing::warn,
+    std::io::{Read, Seek, Write},
+    tracing::error,
 };
 
 #[derive(Clone, derivative::Derivative)]
@@ -34,6 +34,9 @@ mod dds_recompression;
 mod dds_recompression_directx_tex;
 
 mod dds_recompression_intel_tex;
+
+pub trait ReadAndSeek: Read + Seek {}
+impl<T> ReadAndSeek for T where T: Read + Seek {}
 
 impl TransformedTextureHandler {
     #[instrument(skip(self, preheated))]
@@ -67,17 +70,24 @@ impl TransformedTextureHandler {
         spawn_rayon(move || -> Result<_> {
             handle.in_scope(|| {
                 let perform_copy = {
-                    move |from: &mut dyn Read, to: &mut dyn Write, target_path: PathBuf| {
+                    move |from: &mut dyn ReadAndSeek, to: &mut dyn Write, target_path: PathBuf| {
                         info_span!("perform_copy").in_scope(|| {
                             let mut writer = to;
                             let mut reader = tracing::Span::current().wrap_read(size, from);
-                            Ok(())
-                                .and_then(|_| {
-                                    dds_recompression_intel_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer).map(|_| size)
-                                })
+                            Err(anyhow::anyhow!("no configured recompressor"))
+                                // .or_else(|_| {
+                                //     dds_recompression::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer).with_context(|| format!(""))
+                                // })
+                                // .and_then(|_| {
+                                //     dds_recompression_intel_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer).map(|_| size)
+                                // })
                                 .or_else(|e| {
-                                    warn!("intel texture recompression (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}");
-                                    dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
+                                    error!("texture recompression (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}");
+                                    reader
+                                        .rewind()
+                                        .context("rewinding")
+                                        .and_then(|_| dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer))
+                                        .with_context(|| format!("tried because: {e:?}"))
                                 })
                                 .and_then(|wrote| {
                                     wrote

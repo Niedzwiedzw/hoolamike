@@ -21,6 +21,7 @@ use {
     futures::{FutureExt, Stream, StreamExt, TryStreamExt},
     itertools::Itertools,
     nonempty::NonEmpty,
+    rand::seq::SliceRandom,
     remapped_inline_file::RemappingContext,
     std::{
         collections::BTreeMap,
@@ -433,12 +434,13 @@ impl DirectivesHandler {
                             )
                             .collect_vec()
                             .pipe(|directives| {
-                                const DIRECTIVE_CHUNK_SIZE: u64 = 6 * 1024 * 1024 * 1024;
+                                const DIRECTIVE_CHUNK_SIZE: u64 = 2 * 1024 * 1024 * 1024;
                                 let download_summary = self.download_summary.clone();
                                 info_span!("handling nested archive directives", total_size=%directives.len(), estimated_chunk_size_bytes=%DIRECTIVE_CHUNK_SIZE)
                                     .in_scope(|| {
                                         handle_directives.in_scope(|| {
                                             crate::utils::chunk_while(directives, |d| d.iter().map(|d| d.directive_size()).sum::<u64>() > DIRECTIVE_CHUNK_SIZE)
+                                                .tap_mut(|chunk| chunk.shuffle(&mut rand::thread_rng()))
                                                 .pipe(futures::stream::iter)
                                                 .flat_map({
                                                     cloned![manager, download_summary];

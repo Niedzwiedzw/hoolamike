@@ -3,7 +3,7 @@ use {
     anyhow::{Context, Result},
     directxtex::{self, TexMetadata, DDS_FLAGS, DXGI_FORMAT, TEX_COMPRESS_FLAGS, TEX_FILTER_FLAGS, TEX_THRESHOLD_DEFAULT},
     num::ToPrimitive,
-    std::io::{Read, Write},
+    std::io::{Read, Seek, Write},
     tap::prelude::*,
 };
 
@@ -18,7 +18,7 @@ macro_rules! spanned {
 #[tracing::instrument(skip(input, output))]
 pub fn resize_dds<R, W>(input: &mut R, target_width: u32, target_height: u32, target_format: DXGIFormat, target_mipmaps: u32, output: &mut W) -> Result<u64>
 where
-    R: Read,
+    R: Read + Seek,
     W: Write,
 {
     let dds_flags = DDS_FLAGS::DDS_FLAGS_PERMISSIVE;

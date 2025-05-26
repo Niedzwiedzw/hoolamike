@@ -13,7 +13,7 @@ use {
         sync::Arc,
     },
     tap::prelude::*,
-    tempfile::TempPath,
+    tempfile::{TempDir, TempPath},
     tracing::instrument,
 };
 
@@ -125,6 +125,7 @@ impl Wrapped7Zip {
 
 pub struct ArchiveFileHandle {
     pub path: TempPath,
+    pub temp_dir: Arc<TempDir>,
     pub file: std::fs::File,
 }
 
@@ -163,7 +164,7 @@ impl ArchiveHandle {
             .map(|ListOutput { entries }| entries)
     }
 
-    #[instrument]
+    #[instrument(skip_all, fields(count=%paths.len()))]
     pub fn get_many_handles(&self, paths: &[&Path]) -> Result<Vec<(ListOutputEntry, ArchiveFileHandle)>> {
         let mut lookup = paths
             .iter()
@@ -172,7 +173,6 @@ impl ArchiveHandle {
             .collect::<BTreeMap<_, _>>();
         tempfile::tempdir_in(&self.binary.temp_files_dir)
             .context("creating temporary directory")
-            .map(|temp_dir| temp_dir.into_path())
             .and_then(|temp_dir| {
                 self.list_files()
                     .map(|files| {
@@ -193,31 +193,53 @@ impl ArchiveHandle {
                     })
                     .and_then(|entries| {
                         self.binary
-                            .command(|c| c.arg("x").arg(&self.archive))
+                            .command(|c| {
+                                c.arg("x")
+                                    // this ensures only one thread is utilized per extraction task
+                                    // because we are spawning the command from multiple threads we want to avoid nested spawns as it would lead
+                                    // to contention
+                                    .arg("-mmt=1")
+                                    .arg(&self.archive)
+                            })
                             .pipe(|c| {
                                 let mut c = entries.iter().fold(c, |c, entry| {
                                     c.tap_mut(|c| {
                                         c.arg(&entry.original_path);
                                     })
                                 });
-                                c.arg(format!("-o{}", temp_dir.display()));
-                                c.arg(&temp_dir);
+                                c.arg(format!("-o{}", temp_dir.path().display()));
+                                c.arg(temp_dir.path());
                                 c
                             })
                             .read_stdout_ok()
                             .tap_ok(|res| tracing::debug!(%res))
                             .and_then(|_| {
+                                let temp_dir = Arc::new(temp_dir);
                                 entries
                                     .into_iter()
                                     .map(|e| {
-                                        let path = temp_dir.join(&e.original_path).pipe(TempPath::from_path);
+                                        let path = temp_dir
+                                            .path()
+                                            .join(&e.original_path)
+                                            .pipe(TempPath::from_path);
                                         let file = std::fs::File::open(&path).with_context(|| {
                                             format!(
                                                 "no file was created for entry [{path:?}]\n(found paths: [{:#?}])",
-                                                std::fs::read_dir(&temp_dir).unwrap().collect::<Vec<_>>()
+                                                std::fs::read_dir(temp_dir.path())
+                                                    .unwrap()
+                                                    .collect::<Vec<_>>()
                                             )
                                         });
-                                        file.map(|file| (e, ArchiveFileHandle { path, file }))
+                                        file.map(|file| {
+                                            (
+                                                e,
+                                                ArchiveFileHandle {
+                                                    path,
+                                                    file,
+                                                    temp_dir: temp_dir.clone(),
+                                                },
+                                            )
+                                        })
                                     })
                                     .collect::<Result<Vec<_>>>()
                                     .context("some files were not created")

@@ -65,7 +65,7 @@ impl ProcessArchive for ZipArchive {
         self.list_paths_with_originals()
             .map(|paths| paths.into_iter().map(|(_, p)| p).collect())
     }
-    #[instrument]
+    #[instrument(skip_all, fields(count=%paths.len()))]
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         self.list_paths_with_originals()
             .map(|paths| {

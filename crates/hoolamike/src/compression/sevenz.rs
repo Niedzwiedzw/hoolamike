@@ -27,7 +27,7 @@ impl ProcessArchive for SevenZipArchive {
             .pipe(Ok)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all, fields(count=%paths.len()))]
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         self.list_paths_with_originals()
             .pipe(|paths| {
