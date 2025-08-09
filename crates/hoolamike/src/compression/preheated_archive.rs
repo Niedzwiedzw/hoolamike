@@ -10,7 +10,6 @@ use {
     },
     tap::prelude::*,
     tempfile::TempPath,
-    tracing::instrument,
 };
 #[derive(Debug)]
 pub struct PreheatedArchive {
@@ -18,7 +17,6 @@ pub struct PreheatedArchive {
 }
 
 impl PreheatedArchive {
-    #[instrument]
     pub fn from_archive_concurrent(archive: &Path, chunk_size: usize) -> Result<Self> {
         ArchiveHandle::with_guessed(archive, archive.extension(), |mut a| a.list_paths()).and_then(|paths| {
             paths
@@ -53,27 +51,6 @@ impl PreheatedArchive {
                         .fold(BTreeMap::new(), |acc, next| acc.tap_mut(|acc| acc.extend(next)))
                 })
                 .map(|paths| Self { paths })
-        })
-    }
-
-    pub fn from_archive(archive: &mut impl ProcessArchive) -> Result<Self> {
-        archive.list_paths().and_then(|paths| {
-            archive
-                .get_many_handles(paths.iter().map(|p| p.as_path()).collect_vec().as_slice())
-                .context("getting many handles")
-                .and_then(|handles| {
-                    handles
-                        .into_iter()
-                        .map(|(path, handle)| {
-                            handle
-                                .seek_with_temp_file_blocking_raw(0)
-                                .context("preheating file")
-                                .map(|(_, handle)| (path, handle))
-                        })
-                        .collect::<Result<BTreeMap<_, _>>>()
-                        .context("some files could not be preheated")
-                        .map(|paths| Self { paths })
-                })
         })
     }
 }

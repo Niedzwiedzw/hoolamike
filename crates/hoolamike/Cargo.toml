@@ -90,7 +90,7 @@ notify = "8.0.0"
 intel_tex = { version = "0.1.4", optional = true }
 ddsfile = "0.5.2"
 image = "0.25.6"
-sevenz-rust2 = { version = "0.13.2", features = [
+sevenz-rust2 = { version = "0.17", features = [
   "aes256",
   "brotli",
   "bzip2",

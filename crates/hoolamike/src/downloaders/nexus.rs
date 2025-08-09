@@ -70,6 +70,7 @@ impl DownloadFileRequest {
 pub struct DownloadLinkResponse(Vec<NexusDownloadLink>);
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ThrottlingHeaders {
     /// X-RL-Hourly-Limit →100
     pub hourly_limit: usize,

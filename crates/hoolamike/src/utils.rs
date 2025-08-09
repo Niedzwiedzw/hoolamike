@@ -88,6 +88,7 @@ impl MaybeWindowsPath {
     }
 }
 
+#[allow(dead_code)]
 pub fn boxed_iter<'a, T: 'a>(iter: impl Iterator<Item = T> + 'a) -> Box<dyn Iterator<Item = T> + 'a> {
     Box::new(iter)
 }

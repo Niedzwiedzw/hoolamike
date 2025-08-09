@@ -4,8 +4,8 @@ use {
     std::{collections::HashMap, fs::File, io::BufWriter, ops::Not, path::PathBuf},
 };
 
-pub type SevenZipFile = ::sevenz_rust2::SevenZReader<File>;
-pub type SevenZipArchive = ::sevenz_rust2::SevenZReader<File>;
+// pub type SevenZipFile = ::sevenz_rust2::SevenZReader<File>;
+pub type SevenZipArchive = ::sevenz_rust2::ArchiveReader<File>;
 
 #[extension_traits::extension(trait SevenZipArchiveExt)]
 impl SevenZipArchive {
@@ -20,14 +20,12 @@ impl SevenZipArchive {
 }
 
 impl ProcessArchive for SevenZipArchive {
-    #[instrument(skip(self))]
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
         self.list_paths_with_originals()
             .pipe(|paths| paths.into_iter().map(|(_, p)| p).collect::<Vec<_>>())
             .pipe(Ok)
     }
 
-    #[instrument(skip(self))]
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         self.list_paths_with_originals()
             .pipe(|paths| {
@@ -43,6 +41,19 @@ impl ProcessArchive for SevenZipArchive {
                         name_lookup
                             .remove(*path)
                             .with_context(|| format!("path [{path:?}] not found in archive:\n{name_lookup:#?}"))
+                            .or_else(|reason| {
+                                name_lookup
+                                    .iter()
+                                    .find_map(|(key, name)| {
+                                        key.to_string_lossy()
+                                            .to_lowercase()
+                                            .eq(&path.to_string_lossy().to_lowercase())
+                                            .then_some(name.clone())
+                                    })
+                                    .context("could not even find a case-insensitive path")
+                                    .with_context(|| format!("tried because:\n{reason:?}"))
+                                    .tap_ok(|name| warn!("found case-insensitive name: [{name}]"))
+                            })
                             .map(|name| ((*path).to_owned(), name))
                     })
                     .collect::<Result<Vec<_>>>()
@@ -87,6 +98,12 @@ impl ProcessArchive for SevenZipArchive {
                     })
                     .collect::<Result<Vec<_>>>()
             })
+            .with_context(|| {
+                format!(
+                    "when getting multiple handles out of an archive of kind [{kind:?}]",
+                    kind = ArchiveHandleKind::SevenzRust2
+                )
+            })
     }
     fn get_handle(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
         self.get_many_handles(&[path])
@@ -95,5 +112,3 @@ impl ProcessArchive for SevenZipArchive {
             .map(|(_, file)| file)
     }
 }
-
-impl super::ProcessArchiveFile for SevenZipFile {}
