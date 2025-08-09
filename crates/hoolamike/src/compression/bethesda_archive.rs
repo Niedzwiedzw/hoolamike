@@ -1,6 +1,7 @@
 use {
     super::ProcessArchive,
     crate::{
+        compression::ArchiveHandleKind,
         progress_bars_v2::IndicatifWrapIoExt,
         utils::{MaybeWindowsPath, PathReadWrite, ReadableCatchUnwindExt},
     },
@@ -259,9 +260,19 @@ impl ProcessArchive for BethesdaArchive<'_> {
 
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         match self {
-            BethesdaArchive::Fallout4(fo4) => fo4.get_many_handles(paths),
-            BethesdaArchive::Tes4(tes4) => tes4.get_many_handles(paths),
+            BethesdaArchive::Fallout4(fo4) => fo4
+                .get_many_handles(paths)
+                .context("when reading from fallout 4 archive"),
+            BethesdaArchive::Tes4(tes4) => tes4
+                .get_many_handles(paths)
+                .context("when reading from tes4 archive"),
         }
+        .with_context(|| {
+            format!(
+                "when getting multiple handles out of an archive of kind [{kind:?}]",
+                kind = ArchiveHandleKind::Bethesda
+            )
+        })
     }
 }
 

@@ -43,6 +43,7 @@ impl DownloadersInner {
 
 #[derive(Clone)]
 pub struct Synchronizers {
+    #[allow(dead_code)]
     pub config: Arc<DownloadersConfig>,
     inner: DownloadersInner,
     pub(crate) cache: Arc<download_cache::DownloadCache>,

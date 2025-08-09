@@ -5,14 +5,8 @@ use {
 
 pub mod gamefile_source_downloader;
 pub mod google_drive;
-pub mod mega;
-pub mod http {
-    pub struct HttpDownloader {}
-}
-pub mod manual {
-    pub struct ManualDownloader {}
-}
 pub mod mediafire;
+pub mod mega;
 pub mod nexus;
 pub mod wabbajack_cdn;
 

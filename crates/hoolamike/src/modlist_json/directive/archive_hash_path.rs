@@ -1,15 +1,22 @@
 use {
     super::MaybeWindowsPath,
+    itertools::Itertools,
     nonempty::NonEmpty,
     serde::{ser::Error as _, Deserialize, Serialize},
     std::iter::{empty, once},
     tap::prelude::*,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArchiveHashPath {
     pub source_hash: String,
     pub path: Vec<MaybeWindowsPath>,
+}
+
+impl std::fmt::Debug for ArchiveHashPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.pipe(|Self { source_hash, path }| write!(f, "[{source_hash}] {}", path.iter().map(|p| &p.0).join(" -> ")))
+    }
 }
 
 impl Serialize for ArchiveHashPath {

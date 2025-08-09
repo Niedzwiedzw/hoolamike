@@ -1,6 +1,6 @@
 use {
     crate::{
-        downloaders::{helpers::FutureAnyhowExt, WithArchiveDescriptor},
+        downloaders::WithArchiveDescriptor,
         install_modlist::{download_cache::validate_hash, io_progress_style},
         modlist_json::{
             directive::{
@@ -15,12 +15,14 @@ use {
             DirectiveKind,
         },
         progress_bars_v2::count_progress_style,
+        tokio_runtime_multi,
         utils::{MaybeWindowsPath, PathReadWrite},
     },
     anyhow::{Context, Result},
-    futures::{FutureExt, Stream, StreamExt, TryStreamExt},
+    futures::{FutureExt, Stream, StreamExt},
     itertools::Itertools,
     nonempty::NonEmpty,
+    rayon::iter::{IntoParallelIterator, ParallelIterator},
     remapped_inline_file::RemappingContext,
     std::{
         collections::BTreeMap,
@@ -59,6 +61,7 @@ use crate::modlist_json::Directive;
 pub mod wabbajack_file_handle;
 
 pub struct DirectivesHandler {
+    #[allow(dead_code)]
     pub config: DirectivesHandlerConfig,
     pub create_bsa: create_bsa::CreateBSAHandler,
     pub from_archive: from_archive::FromArchiveHandler,
@@ -79,7 +82,7 @@ pub struct DirectivesHandlerConfig {
 
 pub mod nested_archive_manager;
 
-fn concurrency() -> usize {
+pub fn concurrency() -> usize {
     #[cfg(not(debug_assertions))]
     {
         use std::ops::Div;
@@ -275,7 +278,7 @@ impl DirectivesHandler {
 
     #[allow(clippy::unnecessary_literal_unwrap)]
     #[instrument(skip_all, fields(directives=%directives.len()))]
-    pub fn handle_directives(self: Arc<Self>, directives: Vec<Directive>) -> impl Stream<Item = Result<u64>> {
+    pub fn handle_directives(self: Arc<Self>, directives: Vec<Directive>) -> Result<Vec<u64>> {
         let handle_directives: &'static _ = tracing::Span::current()
             .tap(|pb| {
                 pb.pb_set_length(directives.iter().map(directive_size).sum());
@@ -342,96 +345,84 @@ impl DirectivesHandler {
                 })
                 .collect::<Vec<_>>()
                 .instrument(validating_hashes)
+                .pipe(|tasks| tokio_runtime_multi(concurrency()).map(|runtime| runtime.block_on(tasks)))
         }
-        .then(|directives| {
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
-                .pipe(
-                    |(
-                        mut create_bsa,
-                        mut from_archive,
-                        mut inline_file,
-                        mut patched_from_archive,
-                        mut remapped_inline_file,
-                        mut transformed_texture,
-                        mut completed,
-                    )| {
-                        directives
-                            .into_iter()
-                            .for_each(|directive| match directive {
-                                DirectiveStatus::Completed(size) => completed.push(size),
-                                DirectiveStatus::NeedsRebuild { reason, directive } => {
-                                    tracing::debug!(
-                                        "recomputing directive\ndirective:{directive}:\nreason:{reason:?}",
-                                        directive = format!("{directive:#?}")
-                                            .chars()
-                                            .take(256)
-                                            .collect::<String>(),
-                                    );
-                                    match directive {
-                                        Directive::CreateBSA(create_bsadirective) => create_bsa.push(create_bsadirective),
-                                        Directive::FromArchive(from_archive_directive) => from_archive.push(from_archive_directive),
-                                        Directive::InlineFile(inline_file_directive) => inline_file.push(inline_file_directive),
-                                        Directive::PatchedFromArchive(patched_from_archive_directive) => {
-                                            patched_from_archive.push(patched_from_archive_directive)
-                                        }
-                                        Directive::RemappedInlineFile(remapped_inline_file_directive) => {
-                                            remapped_inline_file.push(remapped_inline_file_directive)
-                                        }
-                                        Directive::TransformedTexture(transformed_texture_directive) => transformed_texture.push(transformed_texture_directive),
-                                    }
+        .map(|directives| {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).pipe(
+                |(
+                    mut create_bsa,
+                    mut from_archive,
+                    mut inline_file,
+                    mut patched_from_archive,
+                    mut remapped_inline_file,
+                    mut transformed_texture,
+                    mut completed,
+                )| {
+                    directives
+                        .into_iter()
+                        .for_each(|directive| match directive {
+                            DirectiveStatus::Completed(size) => completed.push(size),
+                            DirectiveStatus::NeedsRebuild { reason, directive } => {
+                                tracing::debug!(
+                                    "recomputing directive\ndirective:{directive}:\nreason:{reason:?}",
+                                    directive = format!("{directive:#?}")
+                                        .chars()
+                                        .take(256)
+                                        .collect::<String>(),
+                                );
+                                match directive {
+                                    Directive::CreateBSA(create_bsadirective) => create_bsa.push(create_bsadirective),
+                                    Directive::FromArchive(from_archive_directive) => from_archive.push(from_archive_directive),
+                                    Directive::InlineFile(inline_file_directive) => inline_file.push(inline_file_directive),
+                                    Directive::PatchedFromArchive(patched_from_archive_directive) => patched_from_archive.push(patched_from_archive_directive),
+                                    Directive::RemappedInlineFile(remapped_inline_file_directive) => remapped_inline_file.push(remapped_inline_file_directive),
+                                    Directive::TransformedTexture(transformed_texture_directive) => transformed_texture.push(transformed_texture_directive),
                                 }
-                            })
-                            .pipe(|_| {
-                                (
-                                    create_bsa,
-                                    from_archive,
-                                    inline_file,
-                                    patched_from_archive,
-                                    remapped_inline_file,
-                                    transformed_texture,
-                                    completed,
-                                )
-                            })
-                    },
-                )
-                .pipe(ready)
+                            }
+                        })
+                        .pipe(|_| {
+                            (
+                                create_bsa,
+                                from_archive,
+                                inline_file,
+                                patched_from_archive,
+                                remapped_inline_file,
+                                transformed_texture,
+                                completed,
+                            )
+                        })
+                },
+            )
         })
-        .into_stream()
-        .flat_map(
-            move |(create_bsa, from_archive, inline_file, patched_from_archive, remapped_inline_file, transformed_texture, completed)| {
-                futures::stream::empty()
-                    .chain(completed.pipe(futures::stream::iter).map(Ok))
+        .and_then(
+            |(create_bsa, from_archive, inline_file, patched_from_archive, remapped_inline_file, transformed_texture, completed)| {
+                rayon::iter::empty()
+                    .chain(completed.into_par_iter().map(Ok))
+                    .chain(inline_file.into_par_iter().map({
+                        cloned![manager];
+                        move |directive| {
+                            manager
+                                .clone()
+                                .inline_file
+                                .clone()
+                                .handle(directive.clone())
+                                .with_context(|| format!("handling directive [{directive:#?}]"))
+                        }
+                    }))
                     .chain(
-                        inline_file
-                            .pipe(futures::stream::iter)
-                            .map({
-                                cloned![manager];
-                                move |directive| {
-                                    manager
-                                        .clone()
-                                        .inline_file
-                                        .clone()
-                                        .handle(directive.clone())
-                                        .instrument(handle_directives.clone())
-                                        .map(move |res| res.with_context(|| format!("handling directive [{directive:#?}]")))
-                                }
-                            })
-                            .buffer_unordered(concurrency()),
-                    )
-                    .chain(
-                        std::iter::empty()
+                        rayon::iter::empty()
                             .chain(
                                 patched_from_archive
-                                    .into_iter()
+                                    .into_par_iter()
                                     .map(ArchivePathDirective::from),
                             )
-                            .chain(from_archive.into_iter().map(ArchivePathDirective::from))
+                            .chain(from_archive.into_par_iter().map(ArchivePathDirective::from))
                             .chain(
                                 transformed_texture
-                                    .into_iter()
+                                    .into_par_iter()
                                     .map(ArchivePathDirective::from),
                             )
-                            .collect_vec()
+                            .collect::<Vec<_>>()
                             .pipe(|directives| {
                                 const DIRECTIVE_CHUNK_SIZE: u64 = 6 * 1024 * 1024 * 1024;
                                 let download_summary = self.download_summary.clone();
@@ -439,7 +430,7 @@ impl DirectivesHandler {
                                     .in_scope(|| {
                                         handle_directives.in_scope(|| {
                                             crate::utils::chunk_while(directives, |d| d.iter().map(|d| d.directive_size()).sum::<u64>() > DIRECTIVE_CHUNK_SIZE)
-                                                .pipe(futures::stream::iter)
+                                                .into_par_iter()
                                                 .flat_map({
                                                     cloned![manager, download_summary];
                                                     move |directives| {
@@ -448,8 +439,9 @@ impl DirectivesHandler {
                                                                 manager.clone(),
                                                                 download_summary.clone(),
                                                                 directives,
-                                                                concurrency(),
                                                             )
+                                                            .collect_vec()
+                                                            .into_par_iter()
                                                         })
                                                     }
                                                 })
@@ -457,23 +449,17 @@ impl DirectivesHandler {
                                     })
                             }),
                     )
-                    .chain(
-                        remapped_inline_file
-                            .pipe(futures::stream::iter)
-                            .map({
-                                cloned![manager];
-                                move |remapped_inline_file| {
-                                    manager
-                                        .remapped_inline_file
-                                        .clone()
-                                        .handle(remapped_inline_file.clone())
-                                        .instrument(handle_directives.clone())
-                                        .map(move |res| res.with_context(|| format!("handling {remapped_inline_file:#?}")))
-                                }
-                            })
-                            .buffer_unordered(concurrency()),
-                    )
-                    .chain(create_bsa.pipe(futures::stream::iter).then({
+                    .chain(remapped_inline_file.into_par_iter().map({
+                        cloned![manager];
+                        move |remapped_inline_file| {
+                            manager
+                                .remapped_inline_file
+                                .clone()
+                                .handle(remapped_inline_file.clone())
+                                .with_context(|| format!("handling {remapped_inline_file:#?}"))
+                        }
+                    }))
+                    .chain(create_bsa.into_par_iter().map({
                         cloned![manager];
                         move |create_bsa| {
                             let debug = format!("{create_bsa:#?}")
@@ -484,15 +470,17 @@ impl DirectivesHandler {
                                 .create_bsa
                                 .clone()
                                 .handle(create_bsa)
-                                .instrument(handle_directives.clone())
-                                .map(move |res| res.with_context(|| format!("handling directive: [{debug}]")))
+                                .with_context(|| format!("handling directive: [{debug}]"))
                         }
                     }))
-                    .inspect_ok({
+                    .inspect({
                         move |size| {
-                            handle_directives.pb_inc(*size);
+                            if let Ok(size) = size {
+                                handle_directives.pb_inc(*size);
+                            }
                         }
                     })
+                    .collect::<Result<Vec<_>>>()
             },
         )
     }

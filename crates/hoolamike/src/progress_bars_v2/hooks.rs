@@ -10,6 +10,7 @@ pub struct IoHook<R, F> {
 impl<T, F> Unpin for IoHook<T, F> {}
 
 impl<R, F> IoHook<R, F> {
+    #[allow(dead_code)]
     pub fn new(inner: R, callback: F) -> Self {
         IoHook { inner, callback }
     }

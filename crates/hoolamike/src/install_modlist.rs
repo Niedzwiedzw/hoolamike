@@ -5,14 +5,14 @@ use {
         error::TotalResult,
         modlist_json::{Archive, Modlist},
         progress_bars_v2::io_progress_style,
-        utils::spawn_rayon,
+        tokio_runtime_multi,
         wabbajack_file::WabbajackFile,
         DebugHelpers,
     },
     anyhow::Context,
-    directives::{DirectivesHandler, DirectivesHandlerConfig},
+    directives::{concurrency, DirectivesHandler, DirectivesHandlerConfig},
     downloads::Synchronizers,
-    futures::{FutureExt, TryFutureExt, TryStreamExt},
+    futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     std::{future::ready, sync::Arc},
     tap::prelude::*,
@@ -26,7 +26,7 @@ pub mod downloads;
 
 #[allow(clippy::needless_as_bytes)]
 #[instrument(skip_all)]
-pub async fn install_modlist(
+pub fn install_modlist(
     HoolamikeConfig {
         downloaders,
         installation: InstallationConfig {
@@ -55,8 +55,7 @@ pub async fn install_modlist(
             wabbajack_entries: _,
             modlist,
         },
-    ) = spawn_rayon(move || WabbajackFile::load_wabbajack_file(wabbajack_file_path))
-        .await
+    ) = WabbajackFile::load_wabbajack_file(wabbajack_file_path)
         .context("loading modlist file")
         .tap_ok(|(_, wabbajack)| {
             // PROGRESS
@@ -82,99 +81,100 @@ pub async fn install_modlist(
         })
         .map_err(|e| vec![e])?;
 
-    modlist
-        .pipe(Ok)
-        .pipe(ready)
-        .and_then(
-            move |Modlist {
-                      archives,
-                      author: _,
-                      description: _,
-                      directives,
-                      game_type,
-                      image: _,
-                      is_nsfw: _,
-                      name: _,
-                      readme: _,
-                      version: _,
-                      wabbajack_version: _,
-                      website: _,
-                  }| {
-                // let archives: Vec<_> = archives
-                //     .into_iter()
-                //     .filter(|archive| {
-                //         serde_json::to_string(&archive)
-                //             .tap_err(|e| tracing::error!("{e:#?}"))
-                //             .map(|directive| contains.iter().all(|contains| directive.contains(contains)))
-                //             .unwrap_or(false)
-                //     })
-                //     .collect();
-                match skip_verify_and_downloads {
-                    true => archives
-                        .into_iter()
-                        .map(|Archive { descriptor, state: _ }| WithArchiveDescriptor {
-                            inner: synchronizers
-                                .cache
-                                .download_output_path(descriptor.name.clone()),
-                            descriptor,
+    modlist.pipe(Ok).and_then(
+        move |Modlist {
+                  archives,
+                  author: _,
+                  description: _,
+                  directives,
+                  game_type,
+                  image: _,
+                  is_nsfw: _,
+                  name: _,
+                  readme: _,
+                  version: _,
+                  wabbajack_version: _,
+                  website: _,
+              }| {
+            // let archives: Vec<_> = archives
+            //     .into_iter()
+            //     .filter(|archive| {
+            //         serde_json::to_string(&archive)
+            //             .tap_err(|e| tracing::error!("{e:#?}"))
+            //             .map(|directive| contains.iter().all(|contains| directive.contains(contains)))
+            //             .unwrap_or(false)
+            //     })
+            //     .collect();
+            match skip_verify_and_downloads {
+                true => archives
+                    .into_iter()
+                    .map(|Archive { descriptor, state: _ }| WithArchiveDescriptor {
+                        inner: synchronizers
+                            .cache
+                            .download_output_path(descriptor.name.clone()),
+                        descriptor,
+                    })
+                    .collect_vec()
+                    .pipe(Ok)
+                    .pipe(ready)
+                    .boxed_local(),
+                false => synchronizers.clone().sync_downloads(archives).boxed_local(),
+            }
+            .pipe(|tasks| {
+                tokio_runtime_multi(concurrency())
+                    .map_err(|e| vec![e])
+                    .and_then(|r| r.block_on(tasks))
+            })
+            .and_then({
+                move |summary| {
+                    tracing::Span::current().pb_inc(summary.iter().map(|d| d.descriptor.size).sum());
+                    games
+                        .get(&game_type)
+                        .with_context(|| format!("[{game_type}] not found in {:?}", games.keys().collect::<Vec<_>>()))
+                        .map(|game_config| {
+                            DirectivesHandler::new(
+                                DirectivesHandlerConfig {
+                                    wabbajack_file: wabbajack_file_handle,
+                                    output_directory: installation_path,
+                                    game_directory: game_config.root_directory.clone(),
+                                    downloads_directory: downloaders.downloads_directory.clone(),
+                                },
+                                summary,
+                            )
                         })
-                        .collect_vec()
-                        .pipe(Ok)
-                        .pipe(ready)
-                        .boxed_local(),
-                    false => synchronizers.clone().sync_downloads(archives).boxed_local(),
+                        .map_err(|e| vec![e])
                 }
-                .and_then({
-                    move |summary| {
-                        tracing::Span::current().pb_inc(summary.iter().map(|d| d.descriptor.size).sum());
-                        games
-                            .get(&game_type)
-                            .with_context(|| format!("[{game_type}] not found in {:?}", games.keys().collect::<Vec<_>>()))
-                            .map(|game_config| {
-                                DirectivesHandler::new(
-                                    DirectivesHandlerConfig {
-                                        wabbajack_file: wabbajack_file_handle,
-                                        output_directory: installation_path,
-                                        game_directory: game_config.root_directory.clone(),
-                                        downloads_directory: downloaders.downloads_directory.clone(),
-                                    },
-                                    summary,
-                                )
+            })
+            .map(Arc::new)
+            .and_then(move |directives_handler| {
+                directives_handler
+                    .handle_directives(directives.tap_mut(|directives| {
+                        *directives = directives
+                            .pipe(std::mem::take)
+                            .drain(..)
+                            .skip_while(|d| {
+                                start_from_directive
+                                    .as_ref()
+                                    .map(|start_from_directive| &d.directive_hash() != start_from_directive)
+                                    .unwrap_or(false)
                             })
-                            .map_err(|e| vec![e])
-                            .pipe(ready)
-                    }
-                })
-                .map_ok(Arc::new)
-                .and_then(move |directives_handler| {
-                    directives_handler
-                        .handle_directives(directives.tap_mut(|directives| {
-                            *directives = directives
-                                .pipe(std::mem::take)
-                                .drain(..)
-                                .skip_while(|d| {
-                                    start_from_directive
-                                        .as_ref()
-                                        .map(|start_from_directive| &d.directive_hash() != start_from_directive)
-                                        .unwrap_or(false)
-                                })
-                                .filter(|directive| !skip_kind.contains(&directive.directive_kind()))
-                                .filter(|directive| {
-                                    serde_json::to_string(&directive)
-                                        .tap_err(|e| tracing::error!("{e:#?}"))
-                                        .map(|directive| contains.iter().all(|contains| directive.contains(contains)))
-                                        .unwrap_or(false)
-                                })
-                                .collect_vec();
-                        }))
-                        .map_ok(|size| tracing::Span::current().pb_inc(size))
-                        .try_collect::<Vec<_>>()
-                        .map(|res| match res {
-                            Ok(out) => Ok(out),
-                            Err(e) => Err(vec![e]),
-                        })
-                })
-            },
-        )
-        .await
+                            .filter(|directive| !skip_kind.contains(&directive.directive_kind()))
+                            .filter(|directive| {
+                                serde_json::to_string(&directive)
+                                    .tap_err(|e| tracing::error!("{e:#?}"))
+                                    .map(|directive| contains.iter().all(|contains| directive.contains(contains)))
+                                    .unwrap_or(false)
+                            })
+                            .collect_vec();
+                    }))
+                    .map(|sizes| {
+                        sizes
+                            .into_iter()
+                            .for_each(|size| tracing::Span::current().pb_inc(size))
+                    })
+                    .map(|_| vec![()])
+                    .map_err(|err| vec![err])
+            })
+        },
+    )
 }
