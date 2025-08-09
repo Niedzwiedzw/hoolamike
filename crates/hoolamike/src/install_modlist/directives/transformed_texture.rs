@@ -3,7 +3,6 @@ use {
     crate::{
         modlist_json::{directive::TransformedTextureDirective, ImageState},
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::spawn_rayon,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     std::io::{Read, Write},

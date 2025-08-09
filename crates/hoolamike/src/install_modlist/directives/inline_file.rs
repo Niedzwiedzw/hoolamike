@@ -1,6 +1,6 @@
 use {
     super::*,
-    crate::{modlist_json::directive::InlineFileDirective, progress_bars_v2::IndicatifWrapIoExt, utils::spawn_rayon},
+    crate::{modlist_json::directive::InlineFileDirective, progress_bars_v2::IndicatifWrapIoExt},
     std::io::Write,
     wabbajack_file_handle::WabbajackFileHandle,
 };

@@ -9,6 +9,7 @@ use {
 };
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct WabbajackFile {
     pub wabbajack_file_path: PathBuf,
     pub wabbajack_entries: Vec<PathBuf>,

@@ -1,7 +1,7 @@
 use {
     super::{ProcessArchive, *},
     crate::utils::MaybeWindowsPath,
-    std::{collections::HashMap, fs::File, io::BufWriter, path::PathBuf},
+    std::{collections::BTreeMap, fs::File, io::BufWriter, path::PathBuf},
     tempfile::NamedTempFile,
 };
 
@@ -60,19 +60,17 @@ impl ZipArchive {
 }
 
 impl ProcessArchive for ZipArchive {
-    #[instrument]
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
         self.list_paths_with_originals()
             .map(|paths| paths.into_iter().map(|(_, p)| p).collect())
     }
-    #[instrument]
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         self.list_paths_with_originals()
             .map(|paths| {
                 paths
                     .into_iter()
                     .map(|(name, path)| (path, name))
-                    .collect::<HashMap<_, _>>()
+                    .collect::<BTreeMap<_, _>>()
             })
             .and_then(|mut name_lookup| {
                 paths
@@ -125,7 +123,14 @@ impl ProcessArchive for ZipArchive {
                         .collect::<Result<Vec<_>>>()
                 })
             })
+            .with_context(|| {
+                format!(
+                    "when getting multiple handles out of an archive of kind [{kind:?}]",
+                    kind = ArchiveHandleKind::Zip
+                )
+            })
     }
+
     fn get_handle(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
         self.get_many_handles(&[path])
             .context("getting file handles")

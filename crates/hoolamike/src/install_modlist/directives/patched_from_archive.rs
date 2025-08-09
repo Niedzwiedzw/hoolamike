@@ -6,11 +6,9 @@ use {
         modlist_json::directive::PatchedFromArchiveDirective,
         progress_bars_v2::IndicatifWrapIoExt,
         read_wrappers::ReadExt,
-        utils::spawn_rayon,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     std::io::{Read, Seek, Write},
-    tracing::Instrument,
     wabbajack_file_handle::WabbajackFileHandle,
 };
 

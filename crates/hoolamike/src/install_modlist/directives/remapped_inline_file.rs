@@ -3,7 +3,7 @@ use {
     crate::{
         modlist_json::directive::RemappedInlineFileDirective,
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::{spawn_rayon, PathReadWrite},
+        utils::PathReadWrite,
     },
     std::io::{Read, Seek},
     tracing::instrument,

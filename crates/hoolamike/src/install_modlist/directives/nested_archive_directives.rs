@@ -4,17 +4,14 @@ use {
         ArchivePathDirective,
         DirectivesHandler,
         DownloadSummary,
-        FutureAnyhowExt,
         IteratorTryFlatMapExt,
         ResolvePathExt,
-        StreamTryFlatMapExt,
     },
     anyhow::{Context, Result},
-    futures::{FutureExt, Stream, StreamExt, TryFutureExt},
     rayon::iter::{IntoParallelIterator, ParallelIterator},
-    std::{future::ready, iter::once, sync::Arc},
+    std::{iter::once, sync::Arc},
     tap::prelude::*,
-    tracing::{info_span, instrument, Instrument},
+    tracing::{info_span, instrument},
 };
 
 #[instrument(skip_all)]
@@ -22,7 +19,6 @@ pub(crate) fn handle_nested_archive_directives(
     manager: Arc<DirectivesHandler>,
     download_summary: DownloadSummary,
     directives: Vec<ArchivePathDirective>,
-    concurrency: usize,
 ) -> impl Iterator<Item = Result<u64>> {
     let preheat_task = {
         let preheat_directives = info_span!("preheat_directives");

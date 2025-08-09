@@ -10,7 +10,6 @@ use {
     },
     tap::prelude::*,
     tempfile::TempPath,
-    tracing::instrument,
 };
 #[derive(Debug)]
 pub struct PreheatedArchive {
@@ -18,7 +17,6 @@ pub struct PreheatedArchive {
 }
 
 impl PreheatedArchive {
-    #[instrument]
     pub fn from_archive_concurrent(archive: &Path, chunk_size: usize) -> Result<Self> {
         ArchiveHandle::with_guessed(archive, archive.extension(), |mut a| a.list_paths()).and_then(|paths| {
             paths

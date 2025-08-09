@@ -128,6 +128,7 @@ pub enum OctodiffCommand {
 }
 
 pub struct ApplyDetla<S: Read + Seek, D: Read + Seek> {
+    #[allow(dead_code)]
     pub metadata: OctodiffMetadata,
     current_command: Option<OctodiffCommandProgress>,
     source: S,
@@ -181,6 +182,7 @@ fn read_next_command<T: Read + Seek>(mut source: T) -> Result<Option<OctodiffCom
     }
 }
 
+#[allow(dead_code)]
 pub enum CommandSummary {
     Copy { start: usize, length: usize },
     Write(Vec<u8>),
@@ -196,6 +198,7 @@ impl std::fmt::Display for CommandSummary {
 }
 
 impl OctodiffMetadata {
+    #[allow(dead_code)]
     pub fn explain<T: Read + Seek>(mut reader: T) -> Result<(Self, Vec<CommandSummary>)> {
         let metadata = WithEof::<Self>::read(&mut reader)
             .context("reading metadata")

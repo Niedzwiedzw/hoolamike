@@ -1,6 +1,6 @@
 use {
     crate::{
-        downloaders::{helpers::FutureAnyhowExt, WithArchiveDescriptor},
+        downloaders::WithArchiveDescriptor,
         install_modlist::{download_cache::validate_hash, io_progress_style},
         modlist_json::{
             directive::{
@@ -19,7 +19,7 @@ use {
         utils::{MaybeWindowsPath, PathReadWrite},
     },
     anyhow::{Context, Result},
-    futures::{FutureExt, Stream, StreamExt, TryStreamExt},
+    futures::{FutureExt, Stream, StreamExt},
     itertools::Itertools,
     nonempty::NonEmpty,
     rayon::iter::{IntoParallelIterator, ParallelIterator},
@@ -27,7 +27,7 @@ use {
     std::{
         collections::BTreeMap,
         future::ready,
-        iter::{empty, once},
+        iter::once,
         path::{Path, PathBuf},
         sync::Arc,
     },
@@ -61,6 +61,7 @@ use crate::modlist_json::Directive;
 pub mod wabbajack_file_handle;
 
 pub struct DirectivesHandler {
+    #[allow(dead_code)]
     pub config: DirectivesHandlerConfig,
     pub create_bsa: create_bsa::CreateBSAHandler,
     pub from_archive: from_archive::FromArchiveHandler,
@@ -438,7 +439,6 @@ impl DirectivesHandler {
                                                                 manager.clone(),
                                                                 download_summary.clone(),
                                                                 directives,
-                                                                concurrency(),
                                                             )
                                                             .collect_vec()
                                                             .into_par_iter()
