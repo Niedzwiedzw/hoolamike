@@ -7,13 +7,14 @@ use {
     std::{
         collections::BTreeMap,
         iter::once,
+        num::NonZeroUsize,
         path::{Path, PathBuf},
         process::{Command, Output, Stdio},
         str::FromStr,
         sync::Arc,
     },
     tap::prelude::*,
-    tempfile::TempPath,
+    tempfile::{TempDir, TempPath},
     tracing::instrument,
 };
 
@@ -124,6 +125,7 @@ impl Wrapped7Zip {
 // }
 
 pub struct ArchiveFileHandle {
+    pub directory: Arc<TempDir>,
     pub path: TempPath,
     pub file: std::fs::File,
 }
@@ -164,7 +166,7 @@ impl ArchiveHandle {
     }
 
     #[instrument]
-    pub fn get_many_handles(&self, paths: &[&Path]) -> Result<Vec<(ListOutputEntry, ArchiveFileHandle)>> {
+    pub fn get_many_handles(&self, paths: &[&Path], concurrency: Option<NonZeroUsize>) -> Result<Vec<(ListOutputEntry, ArchiveFileHandle)>> {
         let mut lookup = paths
             .iter()
             .copied()
@@ -172,7 +174,7 @@ impl ArchiveHandle {
             .collect::<BTreeMap<_, _>>();
         tempfile::tempdir_in(&self.binary.temp_files_dir)
             .context("creating temporary directory")
-            .map(|temp_dir| temp_dir.into_path())
+            .map(Arc::new)
             .and_then(|temp_dir| {
                 self.list_files()
                     .map(|files| {
@@ -194,14 +196,25 @@ impl ArchiveHandle {
                     .and_then(|entries| {
                         self.binary
                             .command(|c| c.arg("x").arg(&self.archive))
+                            .pipe(|c| match concurrency {
+                                Some(concurrency) => c.tap_mut(|c| match concurrency.get() {
+                                    1 => {
+                                        c.arg("-mmt=off");
+                                    }
+                                    more => {
+                                        c.arg(format!("-mmt={more}"));
+                                    }
+                                }),
+                                None => c,
+                            })
                             .pipe(|c| {
                                 let mut c = entries.iter().fold(c, |c, entry| {
                                     c.tap_mut(|c| {
                                         c.arg(&entry.original_path);
                                     })
                                 });
-                                c.arg(format!("-o{}", temp_dir.display()));
-                                c.arg(&temp_dir);
+                                c.arg(format!("-o{}", temp_dir.path().display()));
+                                c.arg(temp_dir.path());
                                 c
                             })
                             .read_stdout_ok()
@@ -210,14 +223,29 @@ impl ArchiveHandle {
                                 entries
                                     .into_iter()
                                     .map(|e| {
-                                        let path = temp_dir.join(&e.original_path).pipe(TempPath::from_path);
+                                        let path = temp_dir
+                                            .as_ref()
+                                            .path()
+                                            .join(&e.original_path)
+                                            .pipe(TempPath::from_path);
                                         let file = std::fs::File::open(&path).with_context(|| {
                                             format!(
                                                 "no file was created for entry [{path:?}]\n(found paths: [{:#?}])",
-                                                std::fs::read_dir(&temp_dir).unwrap().collect::<Vec<_>>()
+                                                std::fs::read_dir(temp_dir.as_ref())
+                                                    .unwrap()
+                                                    .collect::<Vec<_>>()
                                             )
                                         });
-                                        file.map(|file| (e, ArchiveFileHandle { path, file }))
+                                        file.map(|file| {
+                                            (
+                                                e,
+                                                ArchiveFileHandle {
+                                                    path,
+                                                    file,
+                                                    directory: temp_dir.clone(),
+                                                },
+                                            )
+                                        })
                                     })
                                     .collect::<Result<Vec<_>>>()
                                     .context("some files were not created")
@@ -227,7 +255,7 @@ impl ArchiveHandle {
     }
     #[instrument]
     pub fn get_file(&self, file: &Path) -> Result<(ListOutputEntry, ArchiveFileHandle)> {
-        self.get_many_handles(&[file])
+        self.get_many_handles(&[file], Some(NonZeroUsize::new(1).expect("1 is non-zero")))
             .and_then(|file| file.into_iter().next().context("empty output"))
     }
 }

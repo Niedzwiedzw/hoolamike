@@ -37,7 +37,7 @@ mod serde_impl {
             if value == VALUE {
                 Ok(KindGuard)
             } else {
-                Err(serde::de::Error::custom(format!("Expected \"{}\", but found \"{}\"", VALUE, value))).tap_err(|message| tracing::trace!(?message))
+                Err(serde::de::Error::custom(format!("Expected \"{VALUE}\", but found \"{value}\""))).tap_err(|message| tracing::trace!(?message))
             }
         }
     }
