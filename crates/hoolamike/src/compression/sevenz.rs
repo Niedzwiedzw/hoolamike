@@ -4,7 +4,7 @@ use {
     std::{collections::HashMap, fs::File, io::BufWriter, ops::Not, path::PathBuf},
 };
 
-pub type SevenZipFile = ::sevenz_rust2::SevenZReader<File>;
+// pub type SevenZipFile = ::sevenz_rust2::SevenZReader<File>;
 pub type SevenZipArchive = ::sevenz_rust2::SevenZReader<File>;
 
 #[extension_traits::extension(trait SevenZipArchiveExt)]
@@ -95,5 +95,3 @@ impl ProcessArchive for SevenZipArchive {
             .map(|(_, file)| file)
     }
 }
-
-impl super::ProcessArchiveFile for SevenZipFile {}

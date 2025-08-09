@@ -208,5 +208,3 @@ impl ProcessArchive for ArchiveHandle {
             .map(super::ArchiveFileHandle::CompressTools)
     }
 }
-
-impl super::ProcessArchiveFile for CompressToolsFile {}

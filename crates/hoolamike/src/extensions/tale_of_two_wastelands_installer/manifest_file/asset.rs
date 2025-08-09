@@ -145,16 +145,6 @@ impl Asset {
             Asset::XwmaFuz(_) => unimplemented!("Asset::XwmaFuz(_)"),
         }
     }
-    pub fn source(&self) -> LocationIndex {
-        match self {
-            Asset::Copy(copy_asset) => copy_asset.source.location,
-            Asset::New(new_asset) => new_asset.source.location,
-            Asset::Patch(patch_asset) => patch_asset.source.location,
-            Asset::OggEnc2(ogg_enc2_asset) => ogg_enc2_asset.source.location,
-            Asset::AudioEnc(audio_enc_asset) => audio_enc_asset.source.location,
-            Asset::XwmaFuz(_) => unimplemented!("Asset::XwmaFuz(_)"),
-        }
-    }
     pub fn name(&self) -> &str {
         match self {
             Asset::Copy(copy_asset) => copy_asset.source.path.0 .0.as_str(),

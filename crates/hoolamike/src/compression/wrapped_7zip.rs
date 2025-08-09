@@ -1,4 +1,3 @@
-pub use ::wrapped_7zip::{ArchiveFileHandle, ArchiveHandle};
 use {::wrapped_7zip::Wrapped7Zip, itertools::Itertools, std::num::NonZeroUsize};
 
 thread_local! {

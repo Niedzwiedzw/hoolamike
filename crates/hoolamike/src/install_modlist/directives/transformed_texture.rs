@@ -38,7 +38,7 @@ mod dds_recompression_intel_tex;
 
 impl TransformedTextureHandler {
     #[instrument(skip(self, preheated))]
-    pub async fn handle(
+    pub fn handle(
         self,
         TransformedTextureDirective {
             hash,
@@ -65,8 +65,8 @@ impl TransformedTextureHandler {
             .and_then(|path| preheated.get_archive(path))
             .with_context(|| format!("reading archive for [{archive_hash_path:?}]"))?;
 
-        spawn_rayon(move || -> Result<_> {
-            handle.in_scope(|| {
+        handle
+            .in_scope(|| {
                 let perform_copy = {
                     move |from: &mut dyn Read, to: &mut dyn Write, target_path: PathBuf| {
                         info_span!("perform_copy").in_scope(|| {
@@ -132,9 +132,6 @@ impl TransformedTextureHandler {
                     })?;
                 Ok(())
             })
-        })
-        .instrument(tracing::Span::current())
-        .await
-        .map(|_| size)
+            .map(|_| size)
     }
 }

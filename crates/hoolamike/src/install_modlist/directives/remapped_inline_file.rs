@@ -110,7 +110,7 @@ pub struct RemappedInlineFileHandler {
 
 impl RemappedInlineFileHandler {
     #[instrument]
-    pub async fn handle(
+    pub fn handle(
         self,
         RemappedInlineFileDirective {
             hash,
@@ -123,37 +123,32 @@ impl RemappedInlineFileHandler {
             remapping_context,
             wabbajack_file,
         } = self;
-        spawn_rayon(move || {
-            wabbajack_file
-                .get_source_data(source_data_id)
-                .and_then(|source_data| {
-                    source_data
-                        .open_file_read()
-                        .map(|(_, file)| (source_data, file))
+        wabbajack_file
+            .get_source_data(source_data_id)
+            .and_then(|source_data| {
+                source_data
+                    .open_file_read()
+                    .map(|(_, file)| (source_data, file))
+            })
+            .context("reading the file for remapping")
+            .and_then(|(_guard, mut handle)| {
+                String::new().pipe(|mut out| {
+                    tracing::Span::current()
+                        .wrap_read(handle.stream_len().context("reading file size ")?, handle)
+                        .read_to_string(&mut out)
+                        .context("extracting file for remapping")
+                        .map(|_| out)
                 })
-                .context("reading the file for remapping")
-                .and_then(|(_guard, mut handle)| {
-                    String::new().pipe(|mut out| {
-                        tracing::Span::current()
-                            .wrap_read(handle.stream_len().context("reading file size ")?, handle)
-                            .read_to_string(&mut out)
-                            .context("extracting file for remapping")
-                            .map(|_| out)
+            })
+            .map(|file| remapping_context.remap_file_contents(&file))
+            .and_then(|output| {
+                remapping_context
+                    .output_directory
+                    .join(to.clone().into_path())
+                    .open_file_write()
+                    .and_then(|(_, mut file)| {
+                        std::io::copy(&mut tracing::Span::current().wrap_read(size, std::io::Cursor::new(output)), &mut file).context("writing remapped file")
                     })
-                })
-                .map(|file| remapping_context.remap_file_contents(&file))
-                .and_then(|output| {
-                    remapping_context
-                        .output_directory
-                        .join(to.clone().into_path())
-                        .open_file_write()
-                        .and_then(|(_, mut file)| {
-                            std::io::copy(&mut tracing::Span::current().wrap_read(size, std::io::Cursor::new(output)), &mut file)
-                                .context("writing remapped file")
-                        })
-                })
-        })
-        .instrument(info_span!("loading and remapping a file", ?source_data_id))
-        .await
+            })
     }
 }

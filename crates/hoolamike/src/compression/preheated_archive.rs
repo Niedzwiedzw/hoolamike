@@ -55,25 +55,4 @@ impl PreheatedArchive {
                 .map(|paths| Self { paths })
         })
     }
-
-    pub fn from_archive(archive: &mut impl ProcessArchive) -> Result<Self> {
-        archive.list_paths().and_then(|paths| {
-            archive
-                .get_many_handles(paths.iter().map(|p| p.as_path()).collect_vec().as_slice())
-                .context("getting many handles")
-                .and_then(|handles| {
-                    handles
-                        .into_iter()
-                        .map(|(path, handle)| {
-                            handle
-                                .seek_with_temp_file_blocking_raw(0)
-                                .context("preheating file")
-                                .map(|(_, handle)| (path, handle))
-                        })
-                        .collect::<Result<BTreeMap<_, _>>>()
-                        .context("some files could not be preheated")
-                        .map(|paths| Self { paths })
-                })
-        })
-    }
 }
