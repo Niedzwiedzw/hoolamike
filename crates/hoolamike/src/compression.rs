@@ -32,17 +32,12 @@ pub mod forward_only_seek;
 
 pub trait ProcessArchive: Sized {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>>;
-    fn get_handle(&mut self, path: &Path) -> Result<self::ArchiveFileHandle>;
+    fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, self::ArchiveFileHandle)>>;
     #[tracing::instrument(skip_all)]
-    fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, self::ArchiveFileHandle)>> {
-        let _span = tracing::info_span!("get_many_handles").entered();
-        paths
-            .iter()
-            .map(|&path| {
-                self.get_handle(path)
-                    .map(|handle| (path.to_owned(), handle))
-            })
-            .collect()
+    fn get_handle(&mut self, path: &Path) -> Result<self::ArchiveFileHandle> {
+        self.get_many_handles(&[path])
+            .and_then(|out| out.into_iter().next().context("expected one output entry"))
+            .map(|(_, handle)| handle)
     }
 }
 

@@ -10,7 +10,7 @@ use {
     normalize_path::NormalizePath,
     std::{
         borrow::Cow,
-        collections::BTreeSet,
+        collections::{BTreeMap, BTreeSet},
         convert::identity,
         io::{Seek, Write},
         panic::catch_unwind,
@@ -100,53 +100,65 @@ impl super::ProcessArchive for Fallout4Archive<'_> {
         self.list_paths_with_originals()
             .map(|paths| paths.into_iter().map(|(p, _)| p).collect())
     }
-    #[tracing::instrument(skip(self))]
-    fn get_handle(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
-        use tap::prelude::*;
 
-        let mut output = tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR).context("creating temporary file for output")?;
+    fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         let options = ba2::fo4::FileWriteOptionsBuilder::new()
             .compression_format(self.1.compression_format())
             .build();
 
         self.list_paths_with_originals()
             .context("listing entries")
-            .and_then(|paths| {
+            .map(|paths| paths.into_iter().collect::<BTreeMap<_, _>>())
+            .and_then(|mut source_paths| {
                 paths
                     .iter()
-                    .find_map(|(entry, repr)| entry.eq(path).then_some(repr))
-                    .with_context(|| format!("[{}] not found in [{paths:?}]", path.display()))
-                    .and_then(|bethesda_path| {
-                        catch_unwind(|| self.0.get(bethesda_path).context("could not read file"))
-                            .for_anyhow()
-                            .and_then(identity)
-                            .context("reading archive entry")
-                    })
-                    .and_then(|file| {
-                        catch_unwind(|| {
-                            file.iter()
-                                .map(|chunk| chunk.len() as u64)
-                                .sum::<u64>()
-                                .pipe(|size| {
-                                    let mut writer = tracing::Span::current().wrap_write(size, &mut output);
-                                    file.write(&mut writer, &options)
-                                        .context("writing fallout 4 bsa to output buffer")
-                                })
-                                .and_then(move |_| {
-                                    output.rewind().context("rewinding file").and_then(|_| {
-                                        tracing::debug!("finished dumping bethesda archive");
-                                        output.flush().context("flushing").map(|_| output)
+                    .map(|path| {
+                        source_paths
+                            .remove(*path)
+                            .with_context(|| format!("path [{}] not found in [{:#?}]", path.display(), source_paths.keys().collect_vec()))
+                            .and_then(|repr| {
+                                tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                                    .context("creating temporary file for output")
+                                    .map(|output| (repr, output))
+                            })
+                            .and_then(|(bethesda_path, output)| {
+                                catch_unwind(|| self.0.get(&bethesda_path).context("could not read file"))
+                                    .for_anyhow()
+                                    .and_then(identity)
+                                    .context("reading archive entry")
+                                    .map(|file| (file, output))
+                                    .and_then(|(file, mut output)| {
+                                        catch_unwind(|| {
+                                            file.iter()
+                                                .map(|chunk| chunk.len() as u64)
+                                                .sum::<u64>()
+                                                .pipe(|size| {
+                                                    let mut writer = tracing::Span::current().wrap_write(size, &mut output);
+                                                    file.write(&mut writer, &options)
+                                                        .context("writing fallout 4 bsa to output buffer")
+                                                })
+                                                .and_then(move |_| {
+                                                    output.rewind().context("rewinding file").and_then(|_| {
+                                                        tracing::debug!("finished dumping bethesda archive");
+                                                        output.flush().context("flushing").map(|_| output)
+                                                    })
+                                                })
+                                        })
+                                        .for_anyhow()
+                                        .and_then(identity)
+                                        .context("extracting fallout 4 bsa")
                                     })
-                                })
-                        })
-                        .for_anyhow()
-                        .and_then(identity)
-                        .context("extracting fallout 4 bsa")
+                            })
+                            .context("extracting fallout 4 bsa")
+                            .map(super::ArchiveFileHandle::Bethesda)
+                            .map(|handle| (PathBuf::from(path), handle))
+                            .with_context(|| format!("getting file handle for [{}] out of derived paths [{:#?}]", path.display(), paths))
+                            .context("extracting archive handle")
                     })
-                    .map(super::ArchiveFileHandle::Bethesda)
-                    .with_context(|| format!("getting file handle for [{}] out of derived paths [{:#?}]", path.display(), paths))
+                    .collect::<Result<Vec<_>>>()
+                    .context("not all archives could be extracted")
             })
-            .context("getting fallout4 archive handle")
+            .with_context(|| format!("extracing [{}] paths from bethesda archive", paths.len()))
     }
 }
 
@@ -229,16 +241,6 @@ impl super::ProcessArchive for Tes4Archive<'_> {
                     })
             })
     }
-    #[tracing::instrument(skip(self))]
-    fn get_handle(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
-        self.get_many_handles(&[path]).and_then(|paths| {
-            paths
-                .into_iter()
-                .next()
-                .context("no path")
-                .map(|(_, handle)| handle)
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -252,13 +254,6 @@ impl ProcessArchive for BethesdaArchive<'_> {
         match self {
             BethesdaArchive::Fallout4(fo4) => fo4.list_paths(),
             BethesdaArchive::Tes4(tes4) => tes4.list_paths(),
-        }
-    }
-
-    fn get_handle(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
-        match self {
-            BethesdaArchive::Fallout4(fo4) => fo4.get_handle(path),
-            BethesdaArchive::Tes4(tes4) => tes4.get_handle(path),
         }
     }
 
