@@ -1,0 +1,58 @@
+# Confused? Check the docs folder!
+# Still need help? Come ask for help at https://discord.gg/xYHjpKX3YP
+
+# Sources for downloading mods.
+downloaders:
+  # Where you want to downloaded mods to be stored.
+  downloads_directory:
+  # Your NexusMods API key.
+  # Create one here: https://next.nexusmods.com/settings/api-keys/
+  nexus:
+    # DO NOT SHARE THIS INFORMATION UNDER ANY CIRCUMSTANCES!
+    # YOUR API KEY = ACCESS TO YOUR ACCOUNT
+    # SHARING YOUR API KEY COULD GET YOUR ACCOUNT BANNED, OR WORSE!
+    api_key:
+
+installation:
+  # The path to your chosen Wabbajack file.
+  # Download .wabbajack files from the CDN at https://build.wabbajack.org/authored_files
+  wabbajack_file_path:
+  # Where you want to install your chosen Wabbajack modpack
+  installation_path:
+
+# Which games you have installed and where you have installed them. 
+# In Steam, the default install location is ~/.steam/steam/steamapps/common/
+# In Heroic Games Launcher, the default install location is ~/Games/Heroic/
+
+# Game names are formatted in CapitalCase.
+# Uncomment the sections relevant to the games that you have installed.
+games:
+  # Fallout3:
+  #   # The root directory is where your game installation is located.
+  #   root_directory:
+  # FalloutNewVegas:
+  #   root_directory:
+  # Fallout4:
+  #   root_directory:
+  # SkyrimSpecialEdition:
+  #   root_directory:
+  # StardewValley:
+  #   root_directory:
+
+# Quality-of-life tweaks.
+# fixup:
+#   # Set game resolution. Bethesda games only.
+#   game_resolution: 1280x800
+
+# Miscellaneous additional tools.
+
+# extras:
+#   # .mpi file handler. For Fallout: New Vegas
+#   tale_of_two_wastelands:
+#     # The path to your chosen .mpi file
+#     path_to_ttw_mpi_file:
+#     variables:
+#       # The location of your chosen game's configuration folder. See the Wiki for details.
+#       USERPROFILE:
+#       # Where you would like to output installation files. Controlled by the .mpi file
+#       DESTINATION:
