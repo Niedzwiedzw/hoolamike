@@ -1,0 +1,11 @@
+[package]
+name = "proton-wrapper"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true

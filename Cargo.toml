@@ -4,6 +4,8 @@ members = [
   "crates/bsa-cli",
   "crates/hoola-audio",
   "crates/hoolamike",
+  "crates/proton-wrapper",
+  "crates/texconv-wrapper",
   "crates/tokio-cached-future",
   "crates/wrapped-7zip",
 ]
