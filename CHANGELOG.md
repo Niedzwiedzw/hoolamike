@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- *(7zip)* Single-threaded execution of extraction to prevent collision with app multithreaded executor
+
+### 📚 Documentation
+
+- *(readme)* Add notes about ulimit problem
+
+## [0.16.1] - 2025-07-16
+
+### 🚀 Features
+
 - *(intel_tex)* Make intel tex optional
 
 ## [0.16.0] - 2025-07-16

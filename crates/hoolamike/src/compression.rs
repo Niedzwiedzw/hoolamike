@@ -2,7 +2,7 @@ use {
     crate::{
         install_modlist::directives::nested_archive_manager::{max_open_files, WithPermit, OPEN_FILE_PERMITS},
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::{boxed_iter, PathReadWrite},
+        utils::PathReadWrite,
     },
     anyhow::{Context, Result},
     std::{
@@ -32,17 +32,12 @@ pub mod forward_only_seek;
 
 pub trait ProcessArchive: Sized {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>>;
-    fn get_handle(&mut self, path: &Path) -> Result<self::ArchiveFileHandle>;
+    fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, self::ArchiveFileHandle)>>;
     #[tracing::instrument(skip_all)]
-    fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, self::ArchiveFileHandle)>> {
-        let _span = tracing::info_span!("get_many_handles").entered();
-        paths
-            .iter()
-            .map(|&path| {
-                self.get_handle(path)
-                    .map(|handle| (path.to_owned(), handle))
-            })
-            .collect()
+    fn get_handle(&mut self, path: &Path) -> Result<self::ArchiveFileHandle> {
+        self.get_many_handles(&[path])
+            .and_then(|out| out.into_iter().next().context("expected one output entry"))
+            .map(|(_, handle)| handle)
     }
 }
 
@@ -93,32 +88,6 @@ impl ProcessArchive for ArchiveHandle<'_> {
                 kind = ArchiveHandleKind::from(&*self)
             )
         })
-    }
-}
-
-impl ArchiveHandle<'_> {
-    pub fn iter_mut(mut self) -> Result<FileHandleIterator<Self>> {
-        self.list_paths().map(|paths| FileHandleIterator {
-            paths: paths.into_iter().pipe(boxed_iter),
-            archive: self,
-        })
-    }
-}
-
-pub struct FileHandleIterator<T> {
-    paths: Box<dyn Iterator<Item = PathBuf>>,
-    archive: T,
-}
-
-impl<T: ProcessArchive> FileHandleIterator<T> {
-    pub fn try_map<U, F: FnMut(ArchiveFileHandle) -> Result<U>>(self, mut map: F) -> std::vec::IntoIter<Result<U>> {
-        self.pipe(|Self { paths, mut archive }| {
-            paths
-                .into_iter()
-                .map(|path| archive.get_handle(&path).and_then(&mut map))
-                .collect::<Vec<_>>()
-        })
-        .into_iter()
     }
 }
 
@@ -326,9 +295,6 @@ impl std::io::Read for ArchiveFileHandle {
         }
     }
 }
-
-#[enum_dispatch::enum_dispatch(ArchiveHandle)]
-pub trait ProcessArchiveFile {}
 
 #[derive(enum_kinds::EnumKind, derivative::Derivative)]
 #[derivative(Debug)]

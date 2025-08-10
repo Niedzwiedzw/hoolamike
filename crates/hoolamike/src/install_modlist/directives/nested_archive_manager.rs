@@ -1,23 +1,13 @@
 use {
     super::concurrency,
-    crate::{downloaders::helpers::FutureAnyhowExt, modlist_json::directive::ArchiveHashPath},
+    crate::downloaders::helpers::FutureAnyhowExt,
     anyhow::Result,
     futures::TryFutureExt,
     once_cell::sync::Lazy,
     std::{future::ready, sync::Arc},
-    tap::prelude::*,
     tokio::sync::{OwnedSemaphorePermit, Semaphore},
     tracing::{info_span, instrument, Instrument},
 };
-
-impl ArchiveHashPath {
-    pub fn parent(self) -> Option<(Self, crate::utils::MaybeWindowsPath)> {
-        self.pipe(|Self { source_hash, mut path }| {
-            path.pop()
-                .map(|popped| (Self { source_hash, path }, popped))
-        })
-    }
-}
 
 pub fn max_open_files() -> usize {
     concurrency() * 40
@@ -26,6 +16,7 @@ pub fn max_open_files() -> usize {
 #[allow(dead_code)]
 pub(crate) static OPEN_FILE_PERMITS: Lazy<Arc<Semaphore>> = Lazy::new(|| Arc::new(Semaphore::new(max_open_files())));
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct WithPermit<T> {
     pub permit: OwnedSemaphorePermit,

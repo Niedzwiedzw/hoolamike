@@ -47,9 +47,9 @@ impl<T> std::result::Result<T, Box<dyn std::any::Any + Send>> {
 impl Box<dyn std::any::Any + Send> {
     fn to_readable_error(self) -> anyhow::Error {
         if let Some(message) = self.downcast_ref::<&str>() {
-            format!("Caught panic with message: {}", message)
+            format!("Caught panic with message: {message}")
         } else if let Some(message) = self.downcast_ref::<String>() {
-            format!("Caught panic with message: {}", message)
+            format!("Caught panic with message: {message}")
         } else {
             "Caught panic with an unknown type.".to_string()
         }
@@ -88,6 +88,7 @@ impl MaybeWindowsPath {
     }
 }
 
+#[allow(dead_code)]
 pub fn boxed_iter<'a, T: 'a>(iter: impl Iterator<Item = T> + 'a) -> Box<dyn Iterator<Item = T> + 'a> {
     Box::new(iter)
 }
@@ -215,7 +216,7 @@ pub fn deserialize_json_with_error_location<T: serde::de::DeserializeOwned>(text
     serde_json::from_str(text)
         .pipe(|res| {
             if let Some((line, column)) = res.as_ref().err().map(|err| (err.line(), err.column())) {
-                res.with_context(|| format!("error occurred at [{}:{}]", line, column))
+                res.with_context(|| format!("error occurred at [{line}:{column}]"))
                     .with_context(|| {
                         text.lines()
                             .enumerate()

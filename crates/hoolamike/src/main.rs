@@ -102,34 +102,48 @@ enum Commands {
     Audio(self::audio_cli::AudioCliCommand),
 }
 
-pub mod read_wrappers;
+pub(crate) mod read_wrappers;
 #[macro_use]
-pub mod utils;
+pub(crate) mod utils;
 
-pub mod nxm_handler;
+pub(crate) mod nxm_handler;
 
-pub mod archive_cli;
-pub mod audio_cli;
-pub mod compression;
-pub mod config_file;
-pub mod downloaders;
-pub mod error;
-pub mod helpers;
-pub mod install_modlist;
-pub mod modlist_data;
-pub mod modlist_json;
-pub mod octadiff_reader;
-pub mod post_install_fixup;
-pub mod progress_bars_v2;
-pub mod wabbajack_file;
+pub(crate) mod archive_cli;
+pub(crate) mod audio_cli;
+pub(crate) mod compression;
+pub(crate) mod config_file;
+pub(crate) mod downloaders;
+pub(crate) mod error;
+pub(crate) mod helpers;
+pub(crate) mod install_modlist;
+pub(crate) mod modlist_data;
+pub(crate) mod modlist_json;
+pub(crate) mod octadiff_reader;
+pub(crate) mod post_install_fixup;
+pub(crate) mod progress_bars_v2;
+pub(crate) mod wabbajack_file;
 
 /// non-wabbajack extensions will go here
-pub mod extensions;
+pub(crate) mod extensions;
 
-pub mod consts {
+pub(crate) mod consts {
     use {once_cell::sync::Lazy, std::path::Path, tap::prelude::*};
     pub static TEMP_FILE_DIR: Lazy<&'static Path> =
         Lazy::new(|| Path::new(".hoolamike/TEMP_FILES").tap(|path| std::fs::create_dir_all(path).expect("could not create temporary dir storage")));
+}
+
+pub fn tokio_runtime_single() -> Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("cannot create runtime builder")
+}
+pub fn tokio_runtime_multi(workers: usize) -> Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(workers)
+        .enable_all()
+        .build()
+        .context("cannot create runtime builder")
 }
 
 #[derive(Debug, ValueEnum, Clone, Copy, Default, serde::Serialize)]
@@ -209,7 +223,7 @@ fn setup_logging(logging_mode: LoggingMode) -> Option<impl Drop> {
     }
 }
 
-async fn async_main() -> Result<()> {
+fn async_main() -> Result<()> {
     let Cli {
         command,
         hoolamike_config,
@@ -228,8 +242,7 @@ async fn async_main() -> Result<()> {
                 post_install_fixup::run_post_install_fixup(&config)
             }
             #[cfg(debug_assertions)]
-            Commands::ValidateModlist { path } => tokio::fs::read_to_string(&path)
-                .await
+            Commands::ValidateModlist { path } => std::fs::read_to_string(&path)
                 .context("reading test file")
                 .and_then(|input| modlist_json::parsing_helpers::validate_modlist_file(&input))
                 .with_context(|| format!("testing file {}", path.display())),
@@ -246,7 +259,6 @@ async fn async_main() -> Result<()> {
                 tracing::info!("found config at [{}]", config_path.display());
 
                 install_modlist::install_modlist(config, debug)
-                    .await
                     .map_err(|errors| {
                         errors
                             .iter()
@@ -279,10 +291,14 @@ async fn async_main() -> Result<()> {
             }
             Commands::HandleNxm(handle_nxm_cli) => {
                 let (_config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
-                nxm_handler::run(config, handle_nxm_cli).await
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("cannot create runtime builder")
+                    .and_then(|runtime| runtime.block_on(nxm_handler::run(config, handle_nxm_cli)))
             }
         },
-        (None, Some(nxm_link)) => nxm_handler::handle_nxm_link(nxm_link_handler_port, nxm_link).await,
+        (None, Some(nxm_link)) => tokio_runtime_single().and_then(|r| r.block_on(nxm_handler::handle_nxm_link(nxm_link_handler_port, nxm_link))),
         _ => Cli::command()
             .error(clap::error::ErrorKind::ArgumentConflict, "bad usage")
             .exit(),
@@ -298,11 +314,10 @@ async fn async_main() -> Result<()> {
     })
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_cpus::get().saturating_sub(2).max(1))
         .build_global()
         .unwrap();
-    async_main().await
+    async_main()
 }

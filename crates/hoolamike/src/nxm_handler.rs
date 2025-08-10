@@ -58,6 +58,7 @@ pub struct NxmDownloadLink {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct NxmQuery {
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     pub user_id: Obfuscated<u64>,
     pub key: Obfuscated<String>,
     pub expires: u64,
