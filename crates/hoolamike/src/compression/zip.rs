@@ -1,8 +1,9 @@
 use {
     super::{ProcessArchive, *},
-    crate::utils::MaybeWindowsPath,
+    crate::{progress_bars_v2::count_progress_style, utils::MaybeWindowsPath},
     std::{collections::BTreeMap, fs::File, io::BufWriter, path::PathBuf},
     tempfile::NamedTempFile,
+    tracing_indicatif::span_ext::IndicatifSpanExt,
 };
 
 // pub type ZipArchive = ::zip::read::ZipArchive<File>;
@@ -85,11 +86,17 @@ impl ProcessArchive for ZipArchive {
                     .context("figuring out correct archive paths")
             })
             .and_then(|files_to_extract| {
+                let extracting_files = info_span!("extracting_files").tap(|pb| {
+                    pb.pb_set_style(&count_progress_style());
+                    pb.pb_set_length(files_to_extract.len() as _);
+                });
+
                 self.with_archive(|archive| {
                     files_to_extract
                         .into_iter()
                         .map(|(archive_path, file)| {
                             let span = info_span!("extracting_file", ?archive_path, ?file);
+
                             archive
                                 .by_name(&file)
                                 .with_context(|| format!("opening [{file}] ({archive_path:#?})"))
@@ -119,6 +126,9 @@ impl ProcessArchive for ZipArchive {
                                     })
                                 })
                                 .map(|output| (archive_path, output.pipe(super::ArchiveFileHandle::Zip)))
+                                .tap_ok(|_| {
+                                    extracting_files.pb_inc(1);
+                                })
                         })
                         .collect::<Result<Vec<_>>>()
                 })

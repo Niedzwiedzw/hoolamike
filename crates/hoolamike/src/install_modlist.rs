@@ -10,11 +10,11 @@ use {
         DebugHelpers,
     },
     anyhow::Context,
-    directives::{concurrency, DirectivesHandler, DirectivesHandlerConfig},
+    directives::{concurrency, transformed_texture::TexconvProtonState, DirectivesHandler, DirectivesHandlerConfig},
     downloads::Synchronizers,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
-    std::{future::ready, sync::Arc},
+    std::{future::ready, path::Path, sync::Arc},
     tap::prelude::*,
     tracing::instrument,
     tracing_indicatif::span_ext::IndicatifSpanExt,
@@ -35,7 +35,7 @@ pub fn install_modlist(
         },
         games,
         fixup: _,
-        extras: _,
+        extras,
     }: HoolamikeConfig,
     DebugHelpers {
         skip_verify_and_downloads,
@@ -44,10 +44,37 @@ pub fn install_modlist(
         contains,
     }: DebugHelpers,
 ) -> TotalResult<()> {
+    let texconv_proton_state = extras
+        .as_ref()
+        .and_then(|extras| extras.texconv_proton.as_ref())
+        .map(
+            |crate::extensions::texconv_proton::ExtensionConfig {
+                 proton_path,
+                 prefix_dir,
+                 steam_path,
+                 texconv_path,
+             }| {
+                let canonicalize = |path: &Path| std::fs::canonicalize(path).with_context(|| format!("could not canonicalize [{path:?}]"));
+                anyhow::Ok(TexconvProtonState {
+                    texconv_path: texconv_path.pipe_deref(canonicalize)?,
+                    proton_prefix_state: proton_wrapper::ProtonContext {
+                        proton_path: proton_path.pipe_deref(canonicalize)?,
+                        prefix_dir: prefix_dir.pipe_deref(canonicalize)?,
+                        steam_path: steam_path.pipe_deref(canonicalize)?,
+                    }
+                    .initialize()
+                    .context("could not initialize proton context for texconv")
+                    .map(Arc::new)?,
+                })
+            },
+        )
+        .transpose()
+        .context("texconv config was specified, but it could not be set up")
+        .map_err(|e| vec![e])?;
+
     let synchronizers = Synchronizers::new(downloaders.clone(), games.clone())
         .context("setting up downloaders")
         .map_err(|e| vec![e])?;
-
     let (
         wabbajack_file_handle,
         WabbajackFile {
@@ -138,6 +165,7 @@ pub fn install_modlist(
                                     output_directory: installation_path,
                                     game_directory: game_config.root_directory.clone(),
                                     downloads_directory: downloaders.downloads_directory.clone(),
+                                    texconv_proton_state,
                                 },
                                 summary,
                             )

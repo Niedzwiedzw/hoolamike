@@ -311,7 +311,7 @@ pub enum ArchiveHandle<'a> {
 pub mod wrapped_7zip;
 
 #[extension_traits::extension(pub(crate) trait SeekWithTempFileExt)]
-impl<T: std::io::Read + 'static> T
+impl<T: std::io::Read> T
 where
     Self: Sized,
 {

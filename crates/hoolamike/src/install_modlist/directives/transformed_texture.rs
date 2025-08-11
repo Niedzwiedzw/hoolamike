@@ -5,9 +5,16 @@ use {
         progress_bars_v2::IndicatifWrapIoExt,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
+    proton_wrapper::{Initialized, ProtonContext},
     std::io::{Read, Write},
     tracing::warn,
 };
+
+#[derive(Debug, Clone)]
+pub struct TexconvProtonState {
+    pub texconv_path: PathBuf,
+    pub proton_prefix_state: Arc<Initialized<ProtonContext>>,
+}
 
 #[derive(Clone, derivative::Derivative)]
 #[derivative(Debug)]
@@ -15,6 +22,7 @@ pub struct TransformedTextureHandler {
     pub output_directory: PathBuf,
     #[derivative(Debug = "ignore")]
     pub download_summary: DownloadSummary,
+    pub texconv_proton_state: Option<TexconvProtonState>,
 }
 
 #[extension_traits::extension(pub trait IoResultValidateSizeExt)]
@@ -31,6 +39,7 @@ impl std::io::Result<u64> {
 // #[cfg(feature = "dds_recompression")]
 mod dds_recompression;
 mod dds_recompression_directx_tex;
+mod dds_recompression_texconv_proton;
 
 #[cfg(feature = "intel_tex")]
 mod dds_recompression_intel_tex;
@@ -72,6 +81,29 @@ impl TransformedTextureHandler {
                             let mut writer = to;
                             let mut reader = tracing::Span::current().wrap_read(size, from);
                             Err(anyhow::anyhow!("trying multiple algorithms"))
+                                .or_else(|reason| {
+                                    self.texconv_proton_state
+                                        .as_ref()
+                                        .context("texconv+proton not set up, gonna try slow methods")
+                                        .and_then(
+                                            |TexconvProtonState {
+                                                 texconv_path,
+                                                 proton_prefix_state,
+                                             }| {
+                                                dds_recompression_texconv_proton::resize_dds(
+                                                    &mut reader,
+                                                    width,
+                                                    height,
+                                                    format,
+                                                    mip_levels,
+                                                    &mut writer,
+                                                    texconv_path,
+                                                    proton_prefix_state.as_ref(),
+                                                )
+                                                .with_context(|| format!("tried because: {reason:?}"))
+                                            },
+                                        )
+                                })
                                 .pipe(|r| {
                                     #[cfg(feature = "intel_tex")]
                                     {
@@ -86,11 +118,11 @@ impl TransformedTextureHandler {
                                         r
                                     }
                                 })
-                                .or_else(|e| {
-                                    warn!("intel texture recompression (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}");
-                                    dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
-                                        .with_context(|| format!("tried because: {e:?}"))
-                                })
+                                // .or_else(|e| {
+                                //     warn!("intel texture recompression (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}");
+                                //     dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
+                                //         .with_context(|| format!("tried because: {e:?}"))
+                                // })
                                 .and_then(|wrote| {
                                     wrote
                                         .eq(&size)

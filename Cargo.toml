@@ -26,6 +26,8 @@ edition = "2021"
 wrapped-7zip.path = "crates/wrapped-7zip"
 tokio-cached-future.path = "crates/tokio-cached-future"
 hoola-audio.path = "crates/hoola-audio"
+texconv-wrapper.path = "crates/texconv-wrapper"
+proton-wrapper.path = "crates/proton-wrapper"
 
 # external
 anyhow = "1.0.96"

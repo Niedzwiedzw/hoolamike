@@ -50,75 +50,73 @@ impl ProcessArchive for ArchiveHandle {
     }
 
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
-        info_span!("getting_many_handles_compress_tools")
-            .in_scope(|| {
-                self.list_paths().and_then(|listed| {
-                    listed
-                        .into_iter()
-                        .collect::<HashSet<_>>()
-                        .pipe(|mut listed| {
-                            paths
-                                .iter()
-                                .map(|expected| {
-                                    listed
-                                        .remove(*expected)
-                                        .then(|| expected.to_owned().pipe(|v| v.to_owned()))
-                                        .with_context(|| format!("path {expected:?} not found in {listed:#?}"))
-                                })
-                                .collect::<Result<HashSet<PathBuf>>>()
-                                .context("some paths were not found")
-                                .and_then(|mut validated_paths| {
-                                    info_span!("extracting_mutliple_files", file_count=%validated_paths.len()).in_scope(|| {
-                                        unrar::Archive::new(&self.0)
-                                            .open_for_processing()
-                                            .context("opening archive for processing")
-                                            .and_then(|iterator| -> Result<_> {
-                                                let mut out = vec![];
-                                                let mut iterator = Some(iterator);
-                                                while let Some(post_header) = iterator
-                                                    .take()
-                                                    .context("no iterator")
-                                                    .and_then(|iterator| iterator.read_header().context("reading header"))?
+        self.list_paths()
+            .and_then(|listed| {
+                listed
+                    .into_iter()
+                    .collect::<HashSet<_>>()
+                    .pipe(|mut listed| {
+                        paths
+                            .iter()
+                            .map(|expected| {
+                                listed
+                                    .remove(*expected)
+                                    .then(|| expected.to_owned().pipe(|v| v.to_owned()))
+                                    .with_context(|| format!("path {expected:?} not found in {listed:#?}"))
+                            })
+                            .collect::<Result<HashSet<PathBuf>>>()
+                            .context("some paths were not found")
+                            .and_then(|mut validated_paths| {
+                                info_span!("extracting_mutliple_files", file_count=%validated_paths.len()).in_scope(|| {
+                                    unrar::Archive::new(&self.0)
+                                        .open_for_processing()
+                                        .context("opening archive for processing")
+                                        .and_then(|iterator| -> Result<_> {
+                                            let mut out = vec![];
+                                            let mut iterator = Some(iterator);
+                                            while let Some(post_header) = iterator
+                                                .take()
+                                                .context("no iterator")
+                                                .and_then(|iterator| iterator.read_header().context("reading header"))?
+                                            {
+                                                match validated_paths
+                                                    .remove(&post_header.entry().filename)
+                                                    .then_some(post_header.entry().filename.clone())
                                                 {
-                                                    match validated_paths
-                                                        .remove(&post_header.entry().filename)
-                                                        .then_some(post_header.entry().filename.clone())
-                                                    {
-                                                        None => iterator = Some(post_header.skip().context("skipping entry")?),
-                                                        Some(archive_path) => tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
-                                                            .context("creating temp file")
-                                                            .and_then(|file| {
-                                                                file.path()
-                                                                    .pipe_ref(|temp| {
-                                                                        post_header
-                                                                            .extract_to(temp)
-                                                                            .with_context(|| format!("extracting to [{temp:?}]"))
-                                                                    })
-                                                                    .map(|post_extract| {
-                                                                        iterator = Some(post_extract);
-                                                                        out.push((archive_path, file))
-                                                                    })
-                                                            })?,
-                                                    }
+                                                    None => iterator = Some(post_header.skip().context("skipping entry")?),
+                                                    Some(archive_path) => tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                                                        .context("creating temp file")
+                                                        .and_then(|file| {
+                                                            file.path()
+                                                                .pipe_ref(|temp| {
+                                                                    post_header
+                                                                        .extract_to(temp)
+                                                                        .with_context(|| format!("extracting to [{temp:?}]"))
+                                                                })
+                                                                .map(|post_extract| {
+                                                                    iterator = Some(post_extract);
+                                                                    out.push((archive_path, file))
+                                                                })
+                                                        })?,
                                                 }
-                                                Ok(out)
-                                            })
-                                            .map(|paths| {
-                                                paths
-                                                    .into_iter()
-                                                    .map(|(path, file)| (path, self::ArchiveFileHandle::Unrar(file)))
-                                                    .collect_vec()
-                                            })
-                                            .and_then(move |finished| {
-                                                validated_paths
-                                                    .is_empty()
-                                                    .then_some(finished)
-                                                    .with_context(|| format!("not all paths were extracted. missing paths: {validated_paths:#?}"))
-                                            })
-                                    })
+                                            }
+                                            Ok(out)
+                                        })
+                                        .map(|paths| {
+                                            paths
+                                                .into_iter()
+                                                .map(|(path, file)| (path, self::ArchiveFileHandle::Unrar(file)))
+                                                .collect_vec()
+                                        })
+                                        .and_then(move |finished| {
+                                            validated_paths
+                                                .is_empty()
+                                                .then_some(finished)
+                                                .with_context(|| format!("not all paths were extracted. missing paths: {validated_paths:#?}"))
+                                        })
                                 })
-                        })
-                })
+                            })
+                    })
             })
             .with_context(|| {
                 format!(
@@ -126,13 +124,6 @@ impl ProcessArchive for ArchiveHandle {
                     kind = ArchiveHandleKind::Unrar
                 )
             })
-    }
-
-    fn get_handle<'this>(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
-        self.get_many_handles(&[path])
-            .context("extracting path")
-            .and_then(|path| path.into_iter().next().context("no entry in output"))
-            .map(|(_, handle)| handle)
     }
 }
 

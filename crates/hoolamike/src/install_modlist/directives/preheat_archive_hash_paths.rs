@@ -30,13 +30,14 @@ pub struct PreheatedArchiveHashPaths(PreheatedArchiveHashPathsInner);
 impl PreheatedArchiveHashPaths {
     pub fn get_archive(&self, path: NonEmpty<PathBuf>) -> Result<Arc<SourceKind>> {
         match path.len() {
-            1 => Ok(Arc::new(SourceKind::JustPath(path.head))),
+            1 => Ok(Arc::new(SourceKind::JustPath(path.head.clone()))),
             _ => self
                 .0
                 .get(&path)
                 .cloned()
                 .with_context(|| format!("{path:?} not found in [{:#?}]", self.0.keys().collect_vec())),
         }
+        .with_context(|| format!("when getting path [{path:?}] out of a preheated archive"))
     }
     #[tracing::instrument(skip(bottom_level_paths), fields(count=%bottom_level_paths.len()), level = "trace")]
     pub fn preheat_archive_hash_paths(bottom_level_paths: Vec<NonEmpty<PathBuf>>) -> Result<Self> {
@@ -131,24 +132,21 @@ impl PreheatedArchiveHashPaths {
                                                                     parent.last().extension(),
                                                                     |mut archive| {
                                                                         let kind = ArchiveHandleKind::from(&archive);
-                                                                        let span = info_span!("getting_many_handles");
-                                                                        span.in_scope(|| {
-                                                                            archive
-                                                                                .get_many_handles(archive_paths)
-                                                                                .and_then(|handles| {
-                                                                                    handles
-                                                                                        .into_iter()
-                                                                                        .map(|(path, mut file)| {
-                                                                                            file.size()
-                                                                                                .context("checking size")
-                                                                                                .and_then(|size| file.seek_with_temp_file_blocking_raw(size))
-                                                                                                .map(|e| (path, e))
-                                                                                        })
-                                                                                        .collect::<Result<Vec<_>>>()
-                                                                                        .context("writing all files to temp files")
-                                                                                })
-                                                                                .with_context(|| format!("when unpacking files from archive [{kind:?}]"))
-                                                                        })
+                                                                        archive
+                                                                            .get_many_handles(archive_paths)
+                                                                            .and_then(|handles| {
+                                                                                handles
+                                                                                    .into_iter()
+                                                                                    .map(|(path, mut file)| {
+                                                                                        file.size()
+                                                                                            .context("checking size")
+                                                                                            .and_then(|size| file.seek_with_temp_file_blocking_raw(size))
+                                                                                            .map(|e| (path, e))
+                                                                                    })
+                                                                                    .collect::<Result<Vec<_>>>()
+                                                                                    .context("writing all files to temp files")
+                                                                            })
+                                                                            .with_context(|| format!("when unpacking files from archive [{kind:?}]"))
                                                                     },
                                                                 )
                                                                 .pipe(once)

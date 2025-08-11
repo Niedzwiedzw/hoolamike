@@ -99,6 +99,8 @@ sevenz-rust2 = { version = "0.17", features = [
   "ppmd",
   "zstd",
 ] }
+texconv-wrapper.workspace = true
+proton-wrapper.workspace = true
 # tikv-jemallocator = "0.6.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
