@@ -5,7 +5,7 @@ use {
         borrow::Cow,
         collections::{BTreeMap, HashMap},
         fs::File,
-        io::BufWriter,
+        io::{BufWriter, Read},
         ops::Not,
         path::PathBuf,
     },
@@ -16,7 +16,7 @@ use {
 pub type SevenZipArchive = ::sevenz_rust2::ArchiveReader<File>;
 
 #[extension_traits::extension(trait SevenZipArchiveExt)]
-impl SevenZipArchive {
+impl<R: Read + Seek> ::sevenz_rust2::ArchiveReader<R> {
     fn list_paths_with_originals(&mut self) -> Vec<(String, PathBuf)> {
         self.archive()
             .files
@@ -27,7 +27,7 @@ impl SevenZipArchive {
     }
 }
 
-impl ProcessArchive for SevenZipArchive {
+impl<R: Read + Seek> ProcessArchive for ::sevenz_rust2::ArchiveReader<R> {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
         self.list_paths_with_originals()
             .pipe(|paths| paths.into_iter().map(|(_, p)| p).collect::<Vec<_>>())
@@ -92,8 +92,9 @@ impl ProcessArchive for SevenZipArchive {
                                 }
                                 .and_then(|wrote| {
                                     output_file
-                                        .rewind()
-                                        .context("rewinding output file")
+                                        .flush()
+                                        .context("flushing")
+                                        .and_then(|_| output_file.rewind().context("rewinding output file"))
                                         .and_then(|_| {
                                             wrote
                                                 .eq(&expected_size)
@@ -102,7 +103,11 @@ impl ProcessArchive for SevenZipArchive {
                                         })
                                 })
                             })
-                            .map_err(|e| sevenz_rust2::Error::Io(std::io::Error::other(e), Cow::Borrowed("something went wrong when extracting")))
+                            .with_context(|| format!("when extracting entry {entry:#?}"))
+                            .map_err(|e| {
+                                let error = Cow::Owned(format!("{e:?}"));
+                                sevenz_rust2::Error::Io(std::io::Error::other(e), error)
+                            })
                             .map(|out| {
                                 output_data.push((original_file_path, super::ArchiveFileHandle::Zip(out)));
                                 extracting_files.pb_inc(1);
@@ -133,5 +138,146 @@ impl ProcessArchive for SevenZipArchive {
             .context("getting file handles")
             .and_then(|output| output.into_iter().next().context("no output"))
             .map(|(_, file)| file)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        rand::Rng,
+        rayon::iter::{IntoParallelIterator, ParallelIterator},
+        std::convert::identity,
+        tempfile::NamedTempFile,
+        tracing::info,
+    };
+
+    fn in_tempfile(bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
+        NamedTempFile::new()
+            .context("creating tempfile")
+            .and_then(|mut file| {
+                std::io::copy(&mut std::io::Cursor::new(bytes), &mut file)
+                    .context("dumpin archive")
+                    .and_then(|_| {
+                        file.flush()
+                            .context("flushing")
+                            .and_then(|_| file.rewind().context("rewinding"))
+                    })
+                    .map(|_| file)
+            })
+    }
+
+    use super::*;
+    #[test_log::test]
+    fn test_example_archive_works() -> Result<()> {
+        static ARCHIVE: &[u8] = include_bytes!("./example-files/data.7z");
+        info!("testing ./example-files/data.7z");
+
+        in_tempfile(ARCHIVE).and_then(|mut file| {
+            ::sevenz_rust2::ArchiveReader::new(file.as_file_mut(), "".into())
+                .context("opening archive")
+                .and_then(|mut archive| {
+                    archive.list_paths_with_originals().pipe(|paths| {
+                        paths
+                            .iter()
+                            .map(|(_, path)| path.as_path())
+                            .collect::<Vec<_>>()
+                            .pipe(|paths| archive.get_many_handles(&paths))
+                            .map(|extracted| {
+                                extracted
+                                    .into_iter()
+                                    .for_each(|(path, _)| info!("succesfully extracted [{path:?}]"))
+                            })
+                    })
+                })
+        })
+    }
+    #[test_log::test]
+    fn test_weird_1_works() -> Result<()> {
+        static ARCHIVE: &[u8] = include_bytes!("./example-files/weird-1.7z");
+        info!("testing ./example-files/weird-1.7z");
+
+        in_tempfile(ARCHIVE).and_then(|file| {
+            ::sevenz_rust2::ArchiveReader::new(file, "".into())
+                .context("opening archive")
+                .and_then(|mut archive| {
+                    archive.list_paths_with_originals().pipe(|paths| {
+                        paths
+                            .iter()
+                            .map(|(_, path)| path.as_path())
+                            .collect::<Vec<_>>()
+                            .pipe(|paths| archive.get_many_handles(&paths))
+                            .map(|extracted| {
+                                extracted
+                                    .into_iter()
+                                    .for_each(|(path, _)| info!("succesfully extracted [{path:?}]"))
+                            })
+                    })
+                })
+        })
+    }
+    #[test_log::test]
+    fn test_weird_1_works_multiple_threads() -> Result<()> {
+        static ARCHIVE: &[u8] = include_bytes!("./example-files/weird-1.7z");
+        info!("testing ./example-files/weird-1.7z");
+
+        (0..100)
+            .into_par_iter()
+            .map(|_| {
+                in_tempfile(ARCHIVE).and_then(|file| {
+                    ::sevenz_rust2::ArchiveReader::new(file, "".into())
+                        .context("opening archive")
+                        .and_then(|mut archive| {
+                            archive.list_paths_with_originals().pipe(|paths| {
+                                paths
+                                    .iter()
+                                    .map(|(_, path)| path.as_path())
+                                    .filter_map(|f| rand::thread_rng().gen::<bool>().then_some(f))
+                                    .collect::<Vec<_>>()
+                                    .pipe(|paths| archive.get_many_handles(&paths))
+                                    .map(|extracted| {
+                                        extracted
+                                            .into_iter()
+                                            .for_each(|(path, _)| info!("succesfully extracted [{path:?}]"))
+                                    })
+                            })
+                        })
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|_| ())
+    }
+    #[test_log::test]
+    fn test_weird_1_works_multiple_threads_same_file() -> Result<()> {
+        static ARCHIVE: &[u8] = include_bytes!("./example-files/weird-1.7z");
+        info!("testing ./example-files/weird-1.7z");
+
+        in_tempfile(ARCHIVE).and_then(|file| {
+            let path = file.path().to_owned();
+            (0..10000)
+                .into_par_iter()
+                .map(|_| {
+                    path.open_file_read().and_then(|(_, file)| {
+                        ::sevenz_rust2::ArchiveReader::new(file, "".into())
+                            .context("opening archive")
+                            .and_then(|mut archive| {
+                                archive.list_paths_with_originals().pipe(|paths| {
+                                    paths
+                                        .iter()
+                                        .map(|(_, path)| path.as_path())
+                                        .collect::<Vec<_>>()
+                                        .pipe(|paths| archive.get_many_handles(&paths))
+                                        .map(|extracted| {
+                                            extracted
+                                                .into_iter()
+                                                .filter_map(|f| rand::thread_rng().gen::<bool>().then_some(f))
+                                                .for_each(|(path, _)| info!("succesfully extracted [{path:?}]"))
+                                        })
+                                })
+                            })
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(|_| ())
+        })
     }
 }

@@ -171,33 +171,33 @@ impl ArchiveHandle<'_> {
                         .with_context(|| format!("trying because: {reason:?}"))
                         .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))
                 }),
-            Some("7z") => Err(())
-                .or_else(|reason| {
-                    path.open_file_read()
-                        .and_then(|(_, file)| {
-                            self::sevenz::SevenZipArchive::new(file, "".into())
-                                .context("opening archive with SevenzRust2 library")
-                                .map(Box::new)
-                                .map(Self::SevenzRust2)
-                        })
-                        .and_then(&mut with_guessed)
-                        .with_context(|| format!("trying because: {reason:?}"))
-                        .tap_err(|message| tracing::warn!("could not open archive with SevenzRust2: {message:?}"))
-                })
-                .or_else(|reason| {
-                    path.open_file_read()
-                        .and_then(|(_, file)| self::compress_tools::ArchiveHandle::new(file).map(Self::CompressTools))
-                        .and_then(&mut with_guessed)
-                        .with_context(|| format!("trying because: {reason:?}"))
-                        .tap_err(|message| tracing::warn!("could not open archive with CompressTools: {message:?}"))
-                })
-                .or_else(|reason| {
-                    WRAPPED_7ZIP
-                        .with(|wrapped| wrapped.open_file(path).map(Self::Wrapped7Zip))
-                        .and_then(&mut with_guessed)
-                        .with_context(|| format!("trying because: {reason:?}"))
-                        .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))
-                }),
+            Some("7z") => Err(()).or_else(|reason| {
+                path.open_file_read()
+                    .and_then(|(_, mut file)| {
+                        file.rewind().context("rewinding")?;
+                        self::sevenz::SevenZipArchive::new(file, "".into())
+                            .context("opening archive with SevenzRust2 library")
+                            .map(Box::new)
+                            .map(Self::SevenzRust2)
+                    })
+                    .and_then(&mut with_guessed)
+                    .with_context(|| format!("trying because: {reason:?}"))
+                    .tap_err(|message| tracing::warn!("could not open archive with SevenzRust2: {message:?}"))
+            }),
+            // .or_else(|reason| {
+            //     path.open_file_read()
+            //         .and_then(|(_, file)| self::compress_tools::ArchiveHandle::new(file).map(Self::CompressTools))
+            //         .and_then(&mut with_guessed)
+            //         .with_context(|| format!("trying because: {reason:?}"))
+            //         .tap_err(|message| tracing::warn!("could not open archive with CompressTools: {message:?}"))
+            // })
+            // .or_else(|reason| {
+            //     WRAPPED_7ZIP
+            //         .with(|wrapped| wrapped.open_file(path).map(Self::Wrapped7Zip))
+            //         .and_then(&mut with_guessed)
+            //         .with_context(|| format!("trying because: {reason:?}"))
+            //         .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))
+            // }),
             Some("zip") => Err(())
                 .or_else(|_| {
                     self::zip::ZipArchive::new(path)
