@@ -5,7 +5,7 @@ use {
         progress_bars_v2::IndicatifWrapIoExt,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
-    proton_wrapper::{Initialized, ProtonContext},
+    proton_wrapper::proton_context::{Initialized, ProtonContext},
     std::io::{Read, Write},
     tracing::warn,
 };
@@ -100,7 +100,7 @@ impl TransformedTextureHandler {
                                                     texconv_path,
                                                     proton_prefix_state.as_ref(),
                                                 )
-                                                .with_context(|| format!("tried because: {reason:?}"))
+                                                .with_context(|| format!("tried because:\n{reason:?}"))
                                             },
                                         )
                                 })
@@ -109,8 +109,9 @@ impl TransformedTextureHandler {
                                     {
                                         r.or_else(|e| {
                                             dds_recompression_intel_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
+                                                .context("resizing using intel_tex")
                                                 .map(|_| size)
-                                                .with_context(|| format!("tried because: {e:?}"))
+                                                .with_context(|| format!("tried because:\n{e:?}"))
                                         })
                                     }
                                     #[cfg(not(feature = "intel_tex"))]
@@ -118,11 +119,12 @@ impl TransformedTextureHandler {
                                         r
                                     }
                                 })
-                                // .or_else(|e| {
-                                //     warn!("intel texture recompression (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}");
-                                //     dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
-                                //         .with_context(|| format!("tried because: {e:?}"))
-                                // })
+                                .or_else(|e| {
+                                    warn!("other texture recompression methods (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n");
+                                    dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
+                                        .context("resizing using directx_tex")
+                                        .with_context(|| format!("tried because:\n{e:?}"))
+                                })
                                 .and_then(|wrote| {
                                     wrote
                                         .eq(&size)

@@ -1,13 +1,14 @@
 // Import the Texconv builder and related enums
 use {
     crate::{compression::SeekWithTempFileExt, consts::TEMP_FILE_DIR, modlist_json::image_format::DXGIFormat},
-    ::proton_wrapper::CommandWrapInProtonExt,
+    ::proton_wrapper::proton_context::{Initialized, ProtonContext},
     ::texconv_wrapper::{BcFlag, FileType, ImageFilter, Texconv},
     anyhow::{Context, Result},
     itertools::Itertools,
-    proton_wrapper::{Initialized, ProtonContext},
+    proton_wrapper::proton_context::CommandWrapInProtonExt,
     std::{
         io::{Read, Write},
+        num::NonZeroU32,
         path::Path,
     },
     tap::TapFallible,
@@ -58,20 +59,22 @@ where
         .format(format_str)
         .width(target_width)
         .height(target_height)
-        .mip_levels(target_mipmaps)
-        .image_filter(ImageFilter::Triangle) // Matches TEX_FILTER_FLAGS::TEX_FILTER_TRIANGLE
+        .ignore_mips(true)
+        .maybe_mip_levels(NonZeroU32::new(target_mipmaps))
+        .image_filter(ImageFilter::Cubic) // Matches TEX_FILTER_FLAGS::TEX_FILTER_TRIANGLE
         .permissive(true) // Matches DDS_FLAGS::DDS_FLAGS_PERMISSIVE
         .bc_flag(match target_format {
             DXGIFormat::BC7_TYPELESS | DXGIFormat::BC7_UNORM | DXGIFormat::BC7_UNORM_SRGB => BcFlag::Quick,
             _ => BcFlag::Dither, // Default for other compressed formats
         })
         .no_logo(true)
+        .single_proc(true)
         .build()
         .command()
         .wrap_in_proton(proton_context)
-        .and_then(|command| spanned!(command.output()))
+        .and_then(|command| spanned!(command.output_blocking()))
+        .map(|output| info!("{output}"))
         .context("spawning proton command")
-        .map(|output| info!("OUTPUT:{output}"))
         .and_then(|()| {
             std::fs::read_dir(output_dir.path())
                 .context("reading output dir")
@@ -94,3 +97,26 @@ where
         .context("trying to resize texture using texconv + proton")
         .tap_ok(|size| info!("texconv proton success: {size}"))
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     #[test_log::test]
+//     fn test_basic() -> Result<()> {
+//     // proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton"
+//     // prefix_dir: "texconv-pfx"
+//     // steam_path: "/home/niedzwiedz/.local/share/Steam"
+//     // texconv_path: "texconv-pfx/texconv.exe"
+
+//         let proton_context = ProtonContext {
+//             proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton".into(),
+//             prefix_dir: "/tmp/test-pfx",
+//             steam_path: "/home/niedzwiedz/.local/share/Steam".to_owned(),
+//         };
+//         let context = proton_context.initialize()?;
+//         let input = std::io::Cursor::new(include_bytes!())
+//         super::resize_dds(input, target_width, target_height, target_format, target_mipmaps, output, texconv_binary, proton_context)
+
+//         Ok(())
+//     }
+// }

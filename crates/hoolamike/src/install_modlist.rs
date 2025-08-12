@@ -3,6 +3,7 @@ use {
         config_file::{HoolamikeConfig, InstallationConfig},
         downloaders::WithArchiveDescriptor,
         error::TotalResult,
+        extensions::texconv_proton,
         modlist_json::{Archive, Modlist},
         progress_bars_v2::io_progress_style,
         tokio_runtime_multi,
@@ -16,13 +17,68 @@ use {
     itertools::Itertools,
     std::{future::ready, path::Path, sync::Arc},
     tap::prelude::*,
-    tracing::instrument,
+    tokio_stream::StreamExt,
+    tracing::{info, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
 
 pub mod directives;
 pub mod download_cache;
 pub mod downloads;
+
+#[instrument]
+fn setup_texconv_proton(
+    at: &Path,
+    texconv_proton::ExtensionConfig {
+        proton_path,
+        prefix_dir,
+        steam_path,
+        texconv_path,
+    }: texconv_proton::ExtensionConfig,
+) -> anyhow::Result<TexconvProtonState> {
+    const TEXCONV_DEPS: &[(&str, &str, &[&str])] = &[
+        (
+            "https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-desktop-8.0.4-windows-x64-installer",
+            "windowsdesktop-runtime-8.0.4-win-x64.exe",
+            &["/quiet", "/norestart"],
+        ),
+        ("https://aka.ms/vs/16/release/vc_redist.x64.exe", "vc_redist.x64.exe", &["/quiet", "/norestart"]),
+    ];
+    TEXCONV_DEPS
+        .pipe(futures::stream::iter)
+        .then(async |(url, name, args)| {
+            info!("downloading {url}");
+            reqwest::get(*url)
+                .map(|e| e.context("sending request"))
+                .and_then(async |r| r.bytes().await.context("bad bytes"))
+                .and_then(async |bytes| {
+                    let out = at.join(name);
+                    tokio::fs::write(&out, &bytes)
+                        .await
+                        .with_context(|| format!("writing to {out:?}"))
+                        .map(|_| out)
+                })
+                .await
+                .with_context(|| format!("downloading [{url}]"))
+                .map(|path| (path, *args))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()
+        .pipe(|task| tokio_runtime_multi(TEXCONV_DEPS.len()).and_then(|rt| rt.block_on(task)))
+        .and_then(|downloaded| {
+            let canonicalize = |path: &Path| std::fs::canonicalize(path).with_context(|| format!("could not canonicalize [{path:?}]"));
+            anyhow::Ok(TexconvProtonState {
+                texconv_path: texconv_path.pipe_deref(canonicalize)?,
+                proton_prefix_state: proton_wrapper::proton_context::ProtonContext {
+                    proton_path: proton_path.pipe_deref(canonicalize)?,
+                    prefix_dir: prefix_dir.pipe_deref(canonicalize)?,
+                    steam_path: steam_path.pipe_deref(canonicalize)?,
+                }
+                .initialize_with_installs(&downloaded)
+                .context("could not initialize proton context for texconv")
+                .map(Arc::new)?,
+            })
+        })
+}
 
 #[allow(clippy::needless_as_bytes)]
 #[instrument(skip_all)]
@@ -47,27 +103,8 @@ pub fn install_modlist(
     let texconv_proton_state = extras
         .as_ref()
         .and_then(|extras| extras.texconv_proton.as_ref())
-        .map(
-            |crate::extensions::texconv_proton::ExtensionConfig {
-                 proton_path,
-                 prefix_dir,
-                 steam_path,
-                 texconv_path,
-             }| {
-                let canonicalize = |path: &Path| std::fs::canonicalize(path).with_context(|| format!("could not canonicalize [{path:?}]"));
-                anyhow::Ok(TexconvProtonState {
-                    texconv_path: texconv_path.pipe_deref(canonicalize)?,
-                    proton_prefix_state: proton_wrapper::ProtonContext {
-                        proton_path: proton_path.pipe_deref(canonicalize)?,
-                        prefix_dir: prefix_dir.pipe_deref(canonicalize)?,
-                        steam_path: steam_path.pipe_deref(canonicalize)?,
-                    }
-                    .initialize()
-                    .context("could not initialize proton context for texconv")
-                    .map(Arc::new)?,
-                })
-            },
-        )
+        .cloned()
+        .map(|texconv_config| setup_texconv_proton(&installation_path, texconv_config))
         .transpose()
         .context("texconv config was specified, but it could not be set up")
         .map_err(|e| vec![e])?;

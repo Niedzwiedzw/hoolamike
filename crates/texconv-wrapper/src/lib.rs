@@ -1,6 +1,6 @@
 use {
     bon::Builder,
-    std::{path::PathBuf, process::Command},
+    std::{num::NonZeroU32, path::PathBuf, process::Command},
 };
 
 /// Enum for output file types supported by texconv.
@@ -432,7 +432,7 @@ pub struct Texconv {
     /// # Aliases
     /// - `mipmaps`
     /// - `mipmap_levels`
-    mip_levels: Option<u32>,
+    mip_levels: Option<NonZeroU32>,
 
     /// Fit texture dimensions to power-of-2, minimizing aspect ratio changes.
     ///

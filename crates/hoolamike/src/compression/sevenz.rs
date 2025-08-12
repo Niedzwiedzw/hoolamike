@@ -114,7 +114,10 @@ impl<R: Read + Seek> ProcessArchive for ::sevenz_rust2::ArchiveReader<R> {
                                 !lookup.is_empty()
                             })
                     }),
-                    None => std::result::Result::<_, sevenz_rust2::Error>::Ok(!lookup.is_empty()),
+                    None => {
+                        std::io::copy(reader, &mut std::io::empty())?;
+                        std::result::Result::<_, sevenz_rust2::Error>::Ok(!lookup.is_empty())
+                    }
                 })
                 .map(|_| output_data)
                 .context("extracting multiple paths failed")

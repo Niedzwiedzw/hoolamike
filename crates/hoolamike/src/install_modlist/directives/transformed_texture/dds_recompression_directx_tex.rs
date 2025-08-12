@@ -109,5 +109,5 @@ where
                 })
                 .with_context(|| format!("recompressing using derived tex_metadata={tex_metadata:? }"))
         })
-        .tap_ok(|wrote| tracing::debug!("wrote {wrote} bytes"))
+        .tap_ok(|wrote| tracing::info!("[SUCCESS] wrote {wrote} bytes"))
 }
