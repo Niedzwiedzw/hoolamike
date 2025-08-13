@@ -1803,6 +1803,7 @@ dependencies = [
  "serde_yaml",
  "sevenz-rust2",
  "sha1",
+ "sha2",
  "similar",
  "snailquote",
  "static_assertions",

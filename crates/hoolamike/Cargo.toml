@@ -101,6 +101,7 @@ sevenz-rust2 = { version = "0.17", features = [
 ] }
 texconv-wrapper.workspace = true
 proton-wrapper.workspace = true
+sha2 = "0.10.9"
 # tikv-jemallocator = "0.6.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]

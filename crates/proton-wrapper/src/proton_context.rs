@@ -8,6 +8,7 @@ use {
         ops::Not,
         path::{Path, PathBuf},
         process::{Command, Stdio},
+        sync::Arc,
     },
     tap::{Pipe, Tap, TapFallible},
     tempfile::TempDir,
@@ -37,8 +38,9 @@ impl ProtonWrapperShellBin {
 #[derive(Debug, Clone)]
 pub struct ProtonContext {
     pub proton_path: PathBuf,
-    pub prefix_dir: PathBuf,
+    pub prefix_dir: Arc<TempDir>,
     pub steam_path: PathBuf,
+    pub show_gui: bool,
 }
 
 pub trait CommandWrapInProtonExt {
@@ -119,7 +121,7 @@ impl WrappedCommand {
                         debug!(%all_output);
 
                         #[cfg(debug_assertions)]
-                        std::fs::write(self.context.prefix_dir.join("DUMP_STDOUT"), &all_output).expect("dumping output");
+                        std::fs::write(self.context.prefix_dir.path().join("DUMP_STDOUT"), &all_output).expect("dumping output");
 
                         all_output
                             .lines()
@@ -158,6 +160,8 @@ impl WrappedCommand {
     }
 }
 
+const WINE_HIDE_GUI_FLAGS: &str = "msdia80.dll=n";
+
 impl ProtonContext {
     pub fn initialize_with_installs(self, installer_paths: &[(impl AsRef<Path>, &[&str])]) -> Result<Initialized<Self>> {
         self.initialize()
@@ -193,13 +197,10 @@ impl ProtonContext {
             proton_path: _,
             prefix_dir,
             steam_path: _,
+            show_gui,
         } = &self;
-        if !prefix_dir.exists() {
-            debug!("creating pfx directory");
-            std::fs::create_dir_all(prefix_dir).with_context(|| format!("creating prefix for [{}]", prefix_dir.display()))?;
-        }
         PROTON_WRAPPER_SHELL
-            .mount(prefix_dir)
+            .mount(prefix_dir.path())
             .context("mounting proton wrapper shell")
             .and_then(|mounted| {
                 let mut command = Command::new("cmd.exe");
@@ -255,13 +256,14 @@ impl ProtonContext {
             proton_path,
             prefix_dir,
             steam_path,
+            show_gui,
         } = self;
         debug!("wrapping command [{command:?}]");
         let mut wrapped = Command::new(proton_path);
 
         let log_directory = tempfile::Builder::new()
             .prefix("log_directory")
-            .tempdir_in(prefix_dir)
+            .tempdir_in(prefix_dir.path())
             .context("creating temporary log directory")?;
 
         let wrapped_stdio = WrappedStdout::in_directory(log_directory.path());
@@ -289,11 +291,15 @@ impl ProtonContext {
             )
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .pipe(|c| match show_gui {
+                true => c,
+                false => c.env("WINEDLLOVERRIDES", WINE_HIDE_GUI_FLAGS),
+            })
             // .arg(wrapped_command)
             // .envs(command.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))))
             // .env("PROTON_LOG", "1")
             // .env("PROTON_LOG_DIR", log_directory.path())
-            .env("STEAM_COMPAT_DATA_PATH", prefix_dir)
+            .env("STEAM_COMPAT_DATA_PATH", prefix_dir.path())
             .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path)
             .env("SteamGameId", APP_ID);
 
@@ -366,8 +372,9 @@ mod tests {
         debug!("testing if it works");
         ProtonContext {
             proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton".into(),
-            prefix_dir: "/tmp/test-pfx".into(),
+            prefix_dir: Arc::new(TempDir::new()?),
             steam_path: "/home/niedzwiedz/.local/share/Steam".into(),
+            show_gui: false,
         }
         .initialize()
         .and_then(|c| {

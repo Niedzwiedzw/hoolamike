@@ -1,7 +1,8 @@
 use {
+    super::download_cache::validate_hash_wabbajack,
     crate::{
         downloaders::WithArchiveDescriptor,
-        install_modlist::{download_cache::validate_hash, io_progress_style},
+        install_modlist::io_progress_style,
         modlist_json::{
             directive::{
                 create_bsa_directive::{CreateBSADirective, CreateBSADirectiveKind},
@@ -161,7 +162,7 @@ fn is_whitelisted_by_path(path: &Path) -> bool {
 pub async fn validate_hash_with_overrides(path: PathBuf, hash: String, size: u64) -> Result<PathBuf> {
     match is_whitelisted_by_path(&path) {
         true => super::download_cache::validate_file_size(path, size).await,
-        false => validate_hash(path, hash).await,
+        false => validate_hash_wabbajack(path, hash).await,
     }
 }
 

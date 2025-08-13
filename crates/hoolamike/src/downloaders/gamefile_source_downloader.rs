@@ -2,7 +2,7 @@ use {
     super::helpers::FutureAnyhowExt,
     crate::{
         config_file::{GameConfig, GamesConfig},
-        install_modlist::download_cache::validate_hash,
+        install_modlist::download_cache::validate_hash_wabbajack,
         modlist_json::{GameFileSourceState, GameName},
     },
     anyhow::{Context, Result},
@@ -53,7 +53,7 @@ impl GameFileSourceDownloader {
                         })
                 })
             })
-            .and_then(|source| validate_hash(source, hash))
+            .and_then(|source| validate_hash_wabbajack(source, hash))
             .await
     }
 }

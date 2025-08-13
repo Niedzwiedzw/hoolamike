@@ -6,6 +6,8 @@ use {
     },
     anyhow::{Context, Result},
     futures::{FutureExt, TryFutureExt},
+    hex::{FromHex, ToHex},
+    sha2::{digest::Digest, Sha512},
     std::{future::ready, hash::Hasher, path::PathBuf, sync::Arc},
     tap::prelude::*,
     tokio::io::AsyncReadExt,
@@ -35,7 +37,7 @@ async fn read_file_size(path: &PathBuf) -> Result<u64> {
 }
 
 #[tracing::instrument]
-async fn calculate_hash(path: PathBuf) -> Result<u64> {
+async fn calculate_hash_wabbajack(path: PathBuf) -> Result<u64> {
     let size = tokio::fs::metadata(&path)
         .await
         .context("no such file")?
@@ -70,6 +72,43 @@ async fn calculate_hash(path: PathBuf) -> Result<u64> {
     Ok(hasher.finish())
 }
 
+#[tracing::instrument]
+async fn calculate_hash_sha512(path: PathBuf) -> Result<[u8; 64]> {
+    let size = tokio::fs::metadata(&path)
+        .await
+        .context("no such file")?
+        .len();
+
+    let file_name = path
+        .file_name()
+        .context("file must have a name")?
+        .to_string_lossy()
+        .to_string();
+    tracing::Span::current().pipe(|pb| {
+        pb.pb_set_style(&io_progress_style());
+        pb.pb_set_length(size);
+        pb.pb_set_message(&file_name);
+    });
+
+    let mut file = tokio::fs::File::open(&path)
+        .map_with_context(|| format!("opening file [{}]", path.display()))
+        .await?
+        .pipe(tokio::io::BufReader::new);
+
+    let mut buffer = vec![0; crate::BUFFER_SIZE];
+    let mut hasher = Sha512::new();
+    loop {
+        match file.read(&mut buffer).await? {
+            0 => break,
+            read => {
+                hasher.update(&buffer[..read]);
+                tracing::Span::current().pb_inc(read as u64);
+            }
+        }
+    }
+    Ok(hasher.finalize().into())
+}
+
 fn to_base_64(input: &[u8]) -> String {
     use base64::prelude::*;
     BASE64_STANDARD.encode(input)
@@ -98,8 +137,24 @@ pub fn to_u64_from_base_64(input: String) -> Result<u64> {
         .context("decoding string as hashed bytes")
 }
 
-pub async fn validate_hash(path: PathBuf, expected_hash: String) -> Result<PathBuf> {
-    calculate_hash(path.clone())
+pub async fn validate_hash_sha512(path: PathBuf, expected_hash_str: &str) -> Result<PathBuf> {
+    calculate_hash_sha512(path.clone())
+        .and_then(|hash| {
+            <[u8; 64]>::from_hex(expected_hash_str)
+                .with_context(|| format!("bad hash: '{expected_hash_str}'"))
+                .and_then(|expected_hash| {
+                    hash.eq(&expected_hash)
+                        .then(|| path.clone())
+                        .with_context(|| format!("hash mismatch:\nexpected [{expected_hash_str}]\nfound    [{}]", hash.encode_hex::<String>()))
+                })
+                .pipe(ready)
+        })
+        .await
+        .with_context(|| format!("validating hash for [{}]", path.display()))
+}
+
+pub async fn validate_hash_wabbajack(path: PathBuf, expected_hash: String) -> Result<PathBuf> {
+    calculate_hash_wabbajack(path.clone())
         .map_ok(to_base_64_from_u64)
         .and_then(|hash| {
             hash.eq(&expected_hash)
@@ -137,7 +192,7 @@ impl DownloadCache {
             })
             .and_then(|exists| match exists {
                 Some(existing_path) => validate_file_size(existing_path.clone(), size)
-                    .and_then(|found_path| validate_hash(found_path, hash))
+                    .and_then(|found_path| validate_hash_wabbajack(found_path, hash))
                     .map_ok(Some)
                     .boxed(),
                 None => None.pipe(Ok).pipe(ready).boxed(),

@@ -182,6 +182,11 @@ pub async fn stream_merge_file(from: Vec<HumanUrl>, to: PathBuf, expected_size: 
 
 #[instrument]
 pub async fn stream_file(from: HumanUrl, to: PathBuf, expected_size: u64) -> Result<PathBuf> {
+    stream_file_validate(from, to, Some(expected_size)).await
+}
+
+#[instrument]
+pub async fn stream_file_validate(from: HumanUrl, to: PathBuf, expected_size: Option<u64>) -> Result<PathBuf> {
     let target_file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -189,7 +194,7 @@ pub async fn stream_file(from: HumanUrl, to: PathBuf, expected_size: u64) -> Res
         .open(&to)
         .map_with_context(|| format!("opening [{}]", to.display()))
         .await?;
-    let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size, tokio::io::BufWriter::new(target_file));
+    let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size.unwrap_or(0), tokio::io::BufWriter::new(target_file));
     let mut byte_stream = reqwest::get(from.to_string())
         .await
         .with_context(|| format!("making request to {from}"))?
@@ -207,9 +212,12 @@ pub async fn stream_file(from: HumanUrl, to: PathBuf, expected_size: u64) -> Res
             Err(message) => Err(message)?,
         }
     }
-    if downloaded != expected_size {
-        anyhow::bail!("[{from}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
+    if let Some(expected_size) = expected_size {
+        if downloaded != expected_size {
+            anyhow::bail!("[{from}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
+        }
     }
+
     Ok(to)
 }
 impl Synchronizers {

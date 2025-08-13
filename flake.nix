@@ -54,14 +54,6 @@
 
                 # xdelta3 bindings
                 llvmPackages_latest.libclang.lib
-                # cross-compiling proton shell for windows
-                rustup
-                cargo-cross
-                gcc
-                lld
-                pkgs.pkgsCross.mingwW64.buildPackages.gcc
-                pkgs.pkgsCross.mingwW64.windows.mingw_w64_pthreads
-                pkgs.pkgsCross.mingwW64.windows.pthreads
 
                 (rust-bin
                   .selectLatestNightlyWith (toolchain:
@@ -69,7 +61,7 @@
                     .default
                     .override {
                     extensions = ["rust-src" "rust-analyzer" "clippy"];
-                    targets = ["x86_64-pc-windows-gnu" "aarch64-unknown-linux-gnu"];
+                    targets = ["x86_64-pc-windows-gnu" "x86_64-unknown-linux-gnu"];
                   }))
               ]
               ++ pkgs.lib.optionals pkg.stdenv.isDarwin [

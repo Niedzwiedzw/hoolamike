@@ -1,10 +1,11 @@
 use {
     crate::{
         config_file::{HoolamikeConfig, InstallationConfig},
+        consts::TEMP_FILE_DIR,
         downloaders::WithArchiveDescriptor,
         error::TotalResult,
         extensions::texconv_proton,
-        modlist_json::{Archive, Modlist},
+        modlist_json::{Archive, HumanUrl, Modlist},
         progress_bars_v2::io_progress_style,
         tokio_runtime_multi,
         wabbajack_file::WabbajackFile,
@@ -12,13 +13,14 @@ use {
     },
     anyhow::Context,
     directives::{concurrency, transformed_texture::TexconvProtonState, DirectivesHandler, DirectivesHandlerConfig},
-    downloads::Synchronizers,
+    download_cache::validate_hash_sha512,
+    downloads::{stream_file, stream_file_validate, Synchronizers},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     std::{future::ready, path::Path, sync::Arc},
     tap::prelude::*,
     tokio_stream::StreamExt,
-    tracing::{info, instrument},
+    tracing::{info, info_span, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
 
@@ -31,47 +33,58 @@ fn setup_texconv_proton(
     at: &Path,
     texconv_proton::ExtensionConfig {
         proton_path,
-        prefix_dir,
         steam_path,
         texconv_path,
     }: texconv_proton::ExtensionConfig,
 ) -> anyhow::Result<TexconvProtonState> {
-    const TEXCONV_DEPS: &[(&str, &str, &[&str])] = &[
-        (
-            "https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-desktop-8.0.4-windows-x64-installer",
-            "windowsdesktop-runtime-8.0.4-win-x64.exe",
-            &["/quiet", "/norestart"],
-        ),
-        ("https://aka.ms/vs/16/release/vc_redist.x64.exe", "vc_redist.x64.exe", &["/quiet", "/norestart"]),
+    #[rustfmt::skip]
+    const TEXCONV_DEPS: &[(&str, &str, Option<&str>, &[&str])] = &[
+        // (
+        //     "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+        //     "vc_redist.x64.exe",
+        //     None,
+        //     &["/q"],
+        // ),
+        // (
+        //     "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/9.0.7/windowsdesktop-runtime-9.0.7-win-x64.exe",
+        //     "windowsdesktop-runtime-9.0.7-win-x64.exe",
+        //     None,
+        //     &["/quiet", "/passive", "/norestart"],
+        // ),
     ];
     TEXCONV_DEPS
         .pipe(futures::stream::iter)
-        .then(async |(url, name, args)| {
+        .then(async |(url, name, expected_hash, args)| {
             info!("downloading {url}");
-            reqwest::get(*url)
-                .map(|e| e.context("sending request"))
-                .and_then(async |r| r.bytes().await.context("bad bytes"))
-                .and_then(async |bytes| {
-                    let out = at.join(name);
-                    tokio::fs::write(&out, &bytes)
-                        .await
-                        .with_context(|| format!("writing to {out:?}"))
-                        .map(|_| out)
+            let _span = info_span!("downloading installer", %url, %name).entered();
+            url.parse::<HumanUrl>()
+                .with_context(|| format!("parsing url [{url}]"))
+                .pipe(ready)
+                .and_then(|url| {
+                    stream_file_validate(url, at.join(name), None).and_then(async |file| match expected_hash {
+                        Some(expected_hash) => validate_hash_sha512(file.clone(), expected_hash).await,
+                        None => Ok(file),
+                    })
                 })
                 .await
                 .with_context(|| format!("downloading [{url}]"))
                 .map(|path| (path, *args))
         })
         .collect::<anyhow::Result<Vec<_>>>()
-        .pipe(|task| tokio_runtime_multi(TEXCONV_DEPS.len()).and_then(|rt| rt.block_on(task)))
+        .pipe(|task| tokio_runtime_multi(TEXCONV_DEPS.len().max(1)).and_then(|rt| rt.block_on(task)))
         .and_then(|downloaded| {
             let canonicalize = |path: &Path| std::fs::canonicalize(path).with_context(|| format!("could not canonicalize [{path:?}]"));
             anyhow::Ok(TexconvProtonState {
                 texconv_path: texconv_path.pipe_deref(canonicalize)?,
                 proton_prefix_state: proton_wrapper::proton_context::ProtonContext {
                     proton_path: proton_path.pipe_deref(canonicalize)?,
-                    prefix_dir: prefix_dir.pipe_deref(canonicalize)?,
                     steam_path: steam_path.pipe_deref(canonicalize)?,
+                    show_gui: false,
+                    prefix_dir: tempfile::Builder::new()
+                        .prefix("pfx")
+                        .tempdir_in(*TEMP_FILE_DIR)
+                        .context("creating temp directory for prefix")
+                        .map(Arc::new)?,
                 }
                 .initialize_with_installs(&downloaded)
                 .context("could not initialize proton context for texconv")

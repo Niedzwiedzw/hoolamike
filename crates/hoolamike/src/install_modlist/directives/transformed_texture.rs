@@ -119,12 +119,12 @@ impl TransformedTextureHandler {
                                         r
                                     }
                                 })
-                                .or_else(|e| {
-                                    warn!("other texture recompression methods (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n");
-                                    dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
-                                        .context("resizing using directx_tex")
-                                        .with_context(|| format!("tried because:\n{e:?}"))
-                                })
+                                // .or_else(|e| {
+                                //     warn!("other texture recompression methods (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n");
+                                //     dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
+                                //         .context("resizing using directx_tex")
+                                //         .with_context(|| format!("tried because:\n{e:?}"))
+                                // })
                                 .and_then(|wrote| {
                                     wrote
                                         .eq(&size)
