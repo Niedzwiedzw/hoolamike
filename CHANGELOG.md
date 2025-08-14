@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [unreleased]
+
+### 🚀 Features
+
+- *(textured)* Use texconv.exe wrapped in wine for gpu-accellerated texture recompression
+
 ## [0.17.0] - 2025-08-09
 
 ### 🚀 Features
