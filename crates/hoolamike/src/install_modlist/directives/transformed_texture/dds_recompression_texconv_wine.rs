@@ -8,7 +8,7 @@ use {
     std::{
         io::{Read, Write},
         num::NonZeroU32,
-        path::{Path, PathBuf},
+        path::Path,
     },
     tap::{Pipe, TapFallible},
     tracing::info,
@@ -111,7 +111,7 @@ where
                         tracing::warn!("could not recompress texture:\n{reason:?}");
                         #[cfg(debug_assertions)]
                         {
-                            use crate::install_modlist::download_cache::sha512_hex_string;
+                            use {crate::install_modlist::download_cache::sha512_hex_string, std::path::PathBuf};
                             format!("{reason:?}")
                                 .pipe(|reason| sha512_hex_string(reason.as_bytes()))
                                 .pipe(|name| format!("debug-dump--{name}.dds"))

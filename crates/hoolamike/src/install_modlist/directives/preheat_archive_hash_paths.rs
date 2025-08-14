@@ -9,7 +9,6 @@ use {
     indexmap::IndexMap,
     itertools::Itertools,
     nonempty::NonEmpty,
-    rand::seq::SliceRandom,
     rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
     std::{
         collections::{BTreeMap, BTreeSet},
@@ -99,8 +98,7 @@ impl PreheatedArchiveHashPaths {
                                 tasks
                                     .into_iter()
                                     .flat_map(|(a, b, c)| {
-                                        c.tap_mut(|files| files.shuffle(&mut rand::thread_rng()))
-                                            .into_iter()
+                                        c.into_iter()
                                             // TODO: this is guesstimated, ideally they would be chunked by actual size
                                             .chunks(64)
                                             .into_iter()

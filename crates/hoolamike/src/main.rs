@@ -158,7 +158,7 @@ pub enum LoggingMode {
 fn setup_logging(logging_mode: LoggingMode) -> Option<impl Drop> {
     use {
         tracing_indicatif::IndicatifLayer,
-        tracing_subscriber::{fmt, layer::SubscriberExt, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter},
+        tracing_subscriber::{fmt, layer::SubscriberExt, prelude::*, util::SubscriberInitExt, EnvFilter},
     };
     match logging_mode {
         LoggingMode::Flamegraph => {

@@ -105,6 +105,10 @@ pub fn install_modlist(
         contains,
     }: DebugHelpers,
 ) -> TotalResult<()> {
+    std::fs::create_dir_all(&installation_path)
+        .with_context(|| format!("creating installation_path: {installation_path:?}"))
+        .map_err(|e| vec![e])?;
+
     let texconv_wine_state = extras
         .as_ref()
         .and_then(|extras| extras.texconv_wine.as_ref())

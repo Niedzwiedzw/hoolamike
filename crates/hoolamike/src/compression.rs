@@ -175,7 +175,7 @@ impl ArchiveHandle<'_> {
                 path.open_file_read()
                     .and_then(|(_, mut file)| {
                         file.rewind().context("rewinding")?;
-                        self::sevenz::SevenZipArchive::new(file, "".into())
+                        self::sevenz::SevenZipArchive::new(file)
                             .context("opening archive with SevenzRust2 library")
                             .map(Box::new)
                             .map(Self::SevenzRust2)
@@ -215,7 +215,7 @@ impl ArchiveHandle<'_> {
                 .or_else(|reason| {
                     path.open_file_read()
                         .and_then(|(_, file)| {
-                            self::sevenz::SevenZipArchive::new(file, "".into())
+                            self::sevenz::SevenZipArchive::new(file)
                                 .context("opening archive with SevenzRust2 library")
                                 .map(Box::new)
                                 .map(Self::SevenzRust2)
@@ -259,7 +259,7 @@ impl ArchiveHandle<'_> {
                     .or_else(|reason| {
                         path.open_file_read()
                             .and_then(|(_, file)| {
-                                self::sevenz::SevenZipArchive::new(file, "".into())
+                                self::sevenz::SevenZipArchive::new(file)
                                     .context("opening archive with SevenzRust2 library")
                                     .map(Box::new)
                                     .map(Self::SevenzRust2)
