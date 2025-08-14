@@ -3,11 +3,10 @@ use {
     crate::{
         compression::ArchiveHandleKind,
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::{MaybeWindowsPath, PathReadWrite, ReadableCatchUnwindExt},
+        utils::{AsBase64, MaybeWindowsPath, PathReadWrite, ReadableCatchUnwindExt},
     },
     anyhow::{Context, Result},
     ba2::{BStr, ByteSlice, Reader},
-    base64::{prelude::BASE64_STANDARD, Engine},
     itertools::Itertools,
     normalize_path::NormalizePath,
     std::{
@@ -120,12 +119,7 @@ impl super::ProcessArchive for Fallout4Archive<'_> {
                             .with_context(|| format!("path [{}] not found in [{:#?}]", path.display(), source_paths.keys().collect_vec()))
                             .and_then(|repr| {
                                 tempfile::Builder::new()
-                                    .prefix(
-                                        &path
-                                            .to_string_lossy()
-                                            .to_string()
-                                            .pipe(|v| BASE64_STANDARD.encode(v)),
-                                    )
+                                    .prefix(&path.to_base64())
                                     .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                     .context("creating temporary file for output")
                                     .map(|output| (repr, output))
@@ -213,7 +207,9 @@ impl super::ProcessArchive for Tes4Archive<'_> {
                                     })
                                     .context("reading archive entry")
                                     .and_then(move |file| {
-                                        tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                                        tempfile::Builder::new()
+                                            .prefix(&path.to_base64())
+                                            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                             .context("creating temporary file for output")
                                             .and_then(|mut output| {
                                                 catch_unwind(|| {

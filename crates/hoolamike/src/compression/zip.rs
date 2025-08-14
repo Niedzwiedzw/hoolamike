@@ -1,7 +1,9 @@
 use {
     super::{ProcessArchive, *},
-    crate::{progress_bars_v2::count_progress_style, utils::MaybeWindowsPath},
-    base64::{prelude::BASE64_STANDARD, Engine},
+    crate::{
+        progress_bars_v2::count_progress_style,
+        utils::{AsBase64, MaybeWindowsPath},
+    },
     std::{collections::BTreeMap, fs::File, io::BufWriter, path::PathBuf},
     tempfile::NamedTempFile,
     tracing_indicatif::span_ext::IndicatifSpanExt,
@@ -104,7 +106,7 @@ impl ProcessArchive for ZipArchive {
                                 .and_then(|mut file| {
                                     file.size().pipe(|expected_size| {
                                         tempfile::Builder::new()
-                                            .prefix(&file_name.as_str().pipe(|v| BASE64_STANDARD.encode(v)))
+                                            .prefix(&file_name.to_base64())
                                             .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                             .context("creating temp file")
                                             .and_then(|mut output| {

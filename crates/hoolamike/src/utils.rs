@@ -1,9 +1,14 @@
 use {
     anyhow::Context,
+    base64::{prelude::BASE64_STANDARD, Engine},
     futures::FutureExt,
     itertools::Itertools,
     serde::{Deserialize, Serialize},
-    std::{convert::identity, future::Future, path::PathBuf},
+    std::{
+        convert::identity,
+        future::Future,
+        path::{Path, PathBuf},
+    },
     tap::prelude::*,
     tempfile::{NamedTempFile, TempPath},
     tracing::{debug_span, info_span},
@@ -204,4 +209,20 @@ pub fn deserialize_json_with_error_location<T: serde::de::DeserializeOwned>(text
         })
         .context("parsing text")
         .with_context(|| format!("could not parse as {}", std::any::type_name::<T>()))
+}
+
+pub trait AsBase64 {
+    fn to_base64(&self) -> String;
+}
+
+impl<T: AsRef<[u8]>> AsBase64 for T {
+    fn to_base64(&self) -> String {
+        BASE64_STANDARD.encode(self.as_ref())
+    }
+}
+
+impl AsBase64 for Path {
+    fn to_base64(&self) -> String {
+        self.as_os_str().as_encoded_bytes().to_base64()
+    }
 }

@@ -8,7 +8,6 @@ use {
         ResolvePathExt,
     },
     anyhow::{Context, Result},
-    rayon::iter::{IntoParallelIterator, ParallelIterator},
     std::{iter::once, sync::Arc},
     tap::prelude::*,
     tracing::{info_span, instrument},
@@ -38,32 +37,28 @@ pub(crate) fn handle_nested_archive_directives(
         .pipe(once)
         .try_flat_map(move |preheated| {
             let directives = directives.as_ref().to_vec();
-            directives
-                .into_par_iter()
-                .map({
-                    cloned![manager];
-                    move |directive| match directive {
-                        ArchivePathDirective::TransformedTexture(transformed_texture) => manager
-                            .clone()
-                            .transformed_texture
-                            .clone()
-                            .handle(transformed_texture.clone(), preheated.clone())
-                            .with_context(|| format!("handling directive: {transformed_texture:#?}")),
-                        ArchivePathDirective::FromArchive(from_archive) => manager
-                            .clone()
-                            .from_archive
-                            .clone()
-                            .handle(from_archive.clone(), preheated.clone())
-                            .with_context(|| format!("handling directive: {from_archive:#?}")),
-                        ArchivePathDirective::PatchedFromArchive(patched_from_archive_directive) => manager
-                            .clone()
-                            .patched_from_archive
-                            .clone()
-                            .handle(patched_from_archive_directive.clone(), preheated.clone())
-                            .with_context(|| format!("handling directive: {patched_from_archive_directive:#?}")),
-                    }
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
+            directives.into_iter().map({
+                cloned![manager];
+                move |directive| match directive {
+                    ArchivePathDirective::TransformedTexture(transformed_texture) => manager
+                        .clone()
+                        .transformed_texture
+                        .clone()
+                        .handle(transformed_texture.clone(), preheated.clone())
+                        .with_context(|| format!("handling directive: {transformed_texture:#?}")),
+                    ArchivePathDirective::FromArchive(from_archive) => manager
+                        .clone()
+                        .from_archive
+                        .clone()
+                        .handle(from_archive.clone(), preheated.clone())
+                        .with_context(|| format!("handling directive: {from_archive:#?}")),
+                    ArchivePathDirective::PatchedFromArchive(patched_from_archive_directive) => manager
+                        .clone()
+                        .patched_from_archive
+                        .clone()
+                        .handle(patched_from_archive_directive.clone(), preheated.clone())
+                        .with_context(|| format!("handling directive: {patched_from_archive_directive:#?}")),
+                }
+            })
         })
 }

@@ -51,6 +51,7 @@ where
                 .and_then(|(_size, input)| {
                     tempfile::Builder::new()
                         .prefix("dds-output-")
+                        .suffix(&format!(".{extension}"))
                         .tempdir_in(*TEMP_FILE_DIR)
                         .context("creating output dir")
                         .map(|output_dir| (format_str, input, output_dir))

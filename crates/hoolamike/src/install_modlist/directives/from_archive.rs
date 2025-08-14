@@ -52,8 +52,11 @@ impl FromArchiveHandler {
         let source_file = self
             .download_summary
             .resolve_archive_path(&archive_hash_path)
+            .with_context(|| format!("resolving hash path [{archive_hash_path:?}]"))
             .and_then(|path| preheated.get_archive(path))
-            .with_context(|| format!("reading archive for [{archive_hash_path:?}]"))?;
+            .with_context(|| format!("looking up archive in preheaded archives using hash [{archive_hash_path:?}]"))
+            .context("finding source file")?;
+
         let output_path = self.output_directory.join(to.into_path());
 
         let perform_copy = move |from: &mut dyn Read, to: &mut dyn Write, target_path: PathBuf| {
@@ -75,6 +78,7 @@ impl FromArchiveHandler {
                     .context("copying file from archive")
                     .and_then(|_| writer.flush().context("flushing write"))
                     .map(|_| ())
+                    .context("performing file copy")
             })
         };
 

@@ -211,6 +211,19 @@ pub fn boxed_iter<'a, T: 'a>(iter: impl Iterator<Item = T> + 'a) -> Box<dyn Iter
     Box::new(iter)
 }
 
+#[extension_traits::extension(trait ResultVecAndThenChain)]
+impl<E, T> std::result::Result<Vec<T>, E>
+where
+    Self: Sized,
+{
+    fn and_then_chain(self, and_then_chain: impl FnOnce() -> std::result::Result<Vec<T>, E>) -> Self {
+        match self {
+            Ok(head) => and_then_chain().map(|tail| head.tap_mut(|head| head.extend(tail))),
+            Err(e) => Err(e),
+        }
+    }
+}
+
 #[extension_traits::extension(pub trait IteratorTryFlatMapExt)]
 impl<'iter, T, E, I> I
 where
@@ -404,91 +417,127 @@ impl DirectivesHandler {
         })
         .and_then(
             |(create_bsa, from_archive, inline_file, patched_from_archive, remapped_inline_file, transformed_texture, completed)| {
-                rayon::iter::empty()
-                    .chain(completed.into_par_iter().map(Ok))
-                    .chain(inline_file.into_par_iter().map({
-                        cloned![manager];
-                        move |directive| {
-                            manager
-                                .clone()
-                                .inline_file
-                                .clone()
-                                .handle(directive.clone())
-                                .with_context(|| format!("handling directive [{directive:#?}]"))
-                        }
-                    }))
-                    .chain(
-                        rayon::iter::empty()
+                Ok(vec![])
+                    .and_then_chain(|| {
+                        completed
+                            .into_iter()
+                            .inspect(|size| handle_directives.pb_inc(*size))
+                            .collect_vec()
+                            .pipe(Ok)
+                    })
+                    .and_then_chain(|| {
+                        info_span!("inline_file").in_scope(|| {
+                            inline_file
+                                .into_par_iter()
+                                .map({
+                                    cloned![manager];
+                                    move |directive| {
+                                        manager
+                                            .clone()
+                                            .inline_file
+                                            .clone()
+                                            .handle(directive.clone())
+                                            .with_context(|| format!("handling directive [{directive:#?}]"))
+                                    }
+                                })
+                                .inspect(|size| {
+                                    if let Ok(size) = size {
+                                        handle_directives.pb_inc(*size)
+                                    }
+                                })
+                                .collect::<Result<Vec<_>>>()
+                                .context("handling inline file directives")
+                        })
+                    })
+                    .and_then_chain(|| {
+                        std::iter::empty()
                             .chain(
                                 patched_from_archive
-                                    .into_par_iter()
+                                    .into_iter()
                                     .map(ArchivePathDirective::from),
                             )
-                            .chain(from_archive.into_par_iter().map(ArchivePathDirective::from))
+                            .chain(from_archive.into_iter().map(ArchivePathDirective::from))
                             .chain(
                                 transformed_texture
-                                    .into_par_iter()
+                                    .into_iter()
                                     .map(ArchivePathDirective::from),
                             )
                             .collect::<Vec<_>>()
                             .pipe(|directives| {
-                                const DIRECTIVE_CHUNK_SIZE: u64 = 6 * 1024 * 1024 * 1024;
+                                const DIRECTIVE_CHUNK_SIZE: u64 = 6 * 1024 * 1024 * 1024; // 6GiB
                                 let download_summary = self.download_summary.clone();
-                                info_span!("handling nested archive directives", total_size=%directives.len(), estimated_chunk_size_bytes=%DIRECTIVE_CHUNK_SIZE)
-                                    .in_scope(|| {
-                                        handle_directives.in_scope(|| {
-                                            crate::utils::chunk_while(directives, |d| d.iter().map(|d| d.directive_size()).sum::<u64>() > DIRECTIVE_CHUNK_SIZE)
-                                                .into_par_iter()
-                                                .flat_map({
-                                                    cloned![manager, download_summary];
-                                                    move |directives| {
-                                                        info_span!("handling nested archive directives chunk", chunk_size=%directives.len()).in_scope(|| {
-                                                            nested_archive_directives::handle_nested_archive_directives(
-                                                                manager.clone(),
-                                                                download_summary.clone(),
-                                                                directives,
-                                                            )
-                                                            .collect_vec()
-                                                            .into_par_iter()
-                                                        })
-                                                    }
+                                info_span!("nested_archive", total_size=%directives.len(), estimated_chunk_size_bytes=%DIRECTIVE_CHUNK_SIZE).in_scope(|| {
+                                    crate::utils::chunk_while(directives, |d| d.iter().map(|d| d.directive_size()).sum::<u64>() > DIRECTIVE_CHUNK_SIZE)
+                                        .into_par_iter()
+                                        .flat_map({
+                                            cloned![manager, download_summary];
+                                            move |directives| {
+                                                info_span!("handling nested archive directives chunk", chunk_size=%directives.len()).in_scope(|| {
+                                                    nested_archive_directives::handle_nested_archive_directives(
+                                                        manager.clone(),
+                                                        download_summary.clone(),
+                                                        directives,
+                                                    )
+                                                    .collect_vec()
                                                 })
+                                            }
                                         })
-                                    })
-                            }),
-                    )
-                    .chain(remapped_inline_file.into_par_iter().map({
-                        cloned![manager];
-                        move |remapped_inline_file| {
-                            manager
-                                .remapped_inline_file
-                                .clone()
-                                .handle(remapped_inline_file.clone())
-                                .with_context(|| format!("handling {remapped_inline_file:#?}"))
-                        }
-                    }))
-                    .chain(create_bsa.into_par_iter().map({
-                        cloned![manager];
-                        move |create_bsa| {
-                            let debug = format!("{create_bsa:#?}")
-                                .chars()
-                                .take(256)
-                                .collect::<String>();
-                            manager
-                                .create_bsa
-                                .clone()
-                                .handle(create_bsa)
-                                .with_context(|| format!("handling directive: [{debug}]"))
-                        }
-                    }))
-                    .inspect({
-                        move |size| {
-                            if let Ok(size) = size {
-                                handle_directives.pb_inc(*size);
-                            }
-                        }
+                                        .inspect(|size| {
+                                            if let Ok(size) = size {
+                                                handle_directives.pb_inc(*size)
+                                            }
+                                        })
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()
+                            .context("handling nested archive directives")
                     })
-                    .collect::<Result<Vec<_>>>()
+                    .and_then_chain(|| {
+                        remapped_inline_file
+                            .into_par_iter()
+                            .map({
+                                cloned![manager];
+                                move |remapped_inline_file| {
+                                    manager
+                                        .remapped_inline_file
+                                        .clone()
+                                        .handle(remapped_inline_file.clone())
+                                        .with_context(|| format!("handling {remapped_inline_file:#?}"))
+                                }
+                            })
+                            .inspect(|size| {
+                                if let Ok(size) = size {
+                                    handle_directives.pb_inc(*size)
+                                }
+                            })
+                            .collect::<Result<Vec<_>>>()
+                            .context("handling remapped inline files")
+                    })
+                    .and_then_chain(|| {
+                        create_bsa
+                            .into_iter()
+                            .map({
+                                cloned![manager];
+                                move |create_bsa| {
+                                    let debug = format!("{create_bsa:#?}")
+                                        .chars()
+                                        .take(256)
+                                        .collect::<String>();
+                                    manager
+                                        .create_bsa
+                                        .clone()
+                                        .handle(create_bsa)
+                                        .with_context(|| format!("handling directive: [{debug}]"))
+                                }
+                            })
+                            .inspect(|size| {
+                                if let Ok(size) = size {
+                                    handle_directives.pb_inc(*size)
+                                }
+                            })
+                            .collect::<Result<Vec<_>>>()
+                            .context("handling bsa creation")
+                    })
             },
         )
     }

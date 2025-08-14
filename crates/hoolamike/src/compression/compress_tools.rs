@@ -1,9 +1,11 @@
 use {
     super::{ProcessArchive, *},
-    crate::{progress_bars_v2::io_progress_style, utils::MaybeWindowsPath},
+    crate::{
+        progress_bars_v2::io_progress_style,
+        utils::{AsBase64, MaybeWindowsPath},
+    },
     ::compress_tools::*,
     anyhow::{Context, Result},
-    base64::{prelude::BASE64_STANDARD, Engine},
     itertools::Itertools,
     num::ToPrimitive,
     std::{
@@ -45,12 +47,7 @@ impl ArchiveHandle {
             .and_then(|lookup| {
                 self.0.rewind().context("rewinding file")?;
                 tempfile::Builder::new()
-                    .prefix(
-                        &for_path
-                            .to_string_lossy()
-                            .to_string()
-                            .pipe(|p| BASE64_STANDARD.encode(p)),
-                    )
+                    .prefix(&for_path.to_base64())
                     .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                     .context("creating temporary file for output")
                     .and_then(|mut temp_file| {
@@ -128,7 +125,7 @@ impl ProcessArchive for ArchiveHandle {
                                                                 .with_context(|| format!("unrequested entry: {entry_path:?}"))
                                                                 .and_then(|path| {
                                                                     let temp_file = tempfile::Builder::new()
-                                                                        .prefix(&entry_path_string)
+                                                                        .prefix(&entry_path_string.to_base64())
                                                                         .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                                                         .context("creating a temp file for output")?;
                                                                     Ok((

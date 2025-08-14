@@ -1,7 +1,10 @@
 use {
     super::{ProcessArchive, *},
-    crate::{install_modlist::directives::IteratorTryFlatMapExt, progress_bars_v2::count_progress_style, utils::MaybeWindowsPath},
-    base64::{prelude::BASE64_STANDARD, Engine},
+    crate::{
+        install_modlist::directives::IteratorTryFlatMapExt,
+        progress_bars_v2::count_progress_style,
+        utils::{AsBase64, MaybeWindowsPath},
+    },
     itertools::Itertools,
     sevenz_rust2::{BlockDecoder, Password},
     std::{
@@ -117,82 +120,92 @@ impl ProcessArchive for SevenZipArchive {
                 });
                 lookup
                     .into_iter()
-                    .filter_map(|(k, (v, idx))| idx.map(|idx| (k, (v, idx))))
-                    .sorted_unstable_by_key(|(_, (_, idx))| *idx)
-                    .chunk_by(|(_k, (_v, idx))| *idx)
-                    .into_iter()
-                    .map(|(block_idx, chunk)| {
-                        (
-                            block_idx,
-                            chunk
-                                .into_iter()
-                                .map(|(k, (v, _))| (k, v))
-                                .collect::<BTreeMap<_, _>>(),
-                        )
+                    .map(|(k, (v, idx))| {
+                        idx.with_context(|| format!("[{k}] (requested path {v:?}) has no index!"))
+                            .map(|idx| (k, (v, idx)))
                     })
-                    .collect_vec()
-                    .into_iter()
-                    .map(|(block_idx, mut lookup)| {
-                        let mut output_data = Vec::with_capacity(lookup.len());
-                        let block = BlockDecoder::new(1, block_idx, &self.archive, no_password(), &mut self.file);
-
-                        block
-                            .for_each_entries(&mut |entry, reader| match lookup.remove(&entry.name) {
-                                Some(original_file_path) => entry.size().pipe(|expected_size| {
-                                    let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
-                                    tempfile::Builder::new()
-                                        .prefix(&entry.name.as_str().pipe(|v| BASE64_STANDARD.encode(v)))
-                                        .tempfile_in(*crate::consts::TEMP_FILE_DIR)
-                                        .context("creating temp file")
-                                        .and_then(|mut output_file| {
-                                            #[allow(clippy::let_and_return)]
-                                            {
-                                                let result =
-                                                    std::io::copy(&mut span.wrap_read(expected_size as _, reader), &mut BufWriter::new(&mut output_file))
-                                                        .context("extracting into temp file");
-                                                result
-                                            }
-                                            .and_then(|wrote| {
-                                                output_file
-                                                    .flush()
-                                                    .context("flushing")
-                                                    .and_then(|_| output_file.rewind().context("rewinding output file"))
-                                                    .and_then(|_| {
-                                                        wrote
-                                                            .eq(&expected_size)
-                                                            .then_some(output_file)
-                                                            .with_context(|| format!("expected [{expected_size}], found [{wrote}]"))
-                                                    })
-                                            })
-                                        })
-                                        .with_context(|| format!("when extracting entry {entry:#?}"))
-                                        .map_err(|e| {
-                                            let error = Cow::Owned(format!("{e:?}"));
-                                            sevenz_rust2::Error::Io(std::io::Error::other(e), error)
-                                        })
-                                        .map(|out| {
-                                            output_data.push((original_file_path, super::ArchiveFileHandle::Zip(out)));
-                                            extracting_files.pb_inc(1);
-                                            !lookup.is_empty()
-                                        })
-                                }),
-                                None => {
-                                    std::io::copy(reader, &mut std::io::empty())?;
-                                    std::result::Result::<_, sevenz_rust2::Error>::Ok(!lookup.is_empty())
-                                }
-                            })
-                            .with_context(|| format!("decoding chunk from [{block_idx}]"))
-                            .map(|_| output_data)
-                            .and_then(|data| match lookup.is_empty() {
-                                true => Ok(data),
-                                false => Err(anyhow::anyhow!(
-                                    "not all entries were extracted:\nextracted:\n{}\n\nremaining entries:\n{lookup:#?}",
-                                    data.len()
-                                )),
-                            })
-                    })
-                    .try_flat_map(|v| v.into_iter().map(Ok))
                     .collect::<Result<Vec<_>>>()
+                    .and_then(|paths| {
+                        paths
+                            .into_iter()
+                            .sorted_unstable_by_key(|(_, (_, idx))| *idx)
+                            .chunk_by(|(_k, (_v, idx))| *idx)
+                            .into_iter()
+                            .map(|(block_idx, chunk)| {
+                                (
+                                    block_idx,
+                                    chunk
+                                        .into_iter()
+                                        .map(|(k, (v, _))| (k, v))
+                                        .collect::<BTreeMap<_, _>>(),
+                                )
+                            })
+                            .collect_vec()
+                            .into_iter()
+                            .map(|(block_idx, mut lookup)| {
+                                let mut output_data = Vec::with_capacity(lookup.len());
+                                let block = BlockDecoder::new(1, block_idx, &self.archive, no_password(), &mut self.file);
+
+                                block
+                                    .for_each_entries(&mut |entry, reader| match lookup.remove(&entry.name) {
+                                        Some(original_file_path) => entry.size().pipe(|expected_size| {
+                                            let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
+                                            tempfile::Builder::new()
+                                                .prefix(&entry.name.to_base64())
+                                                .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+                                                .context("creating temp file")
+                                                .and_then(|mut output_file| {
+                                                    #[allow(clippy::let_and_return)]
+                                                    {
+                                                        let result = std::io::copy(
+                                                            &mut span.wrap_read(expected_size as _, reader),
+                                                            &mut BufWriter::new(&mut output_file),
+                                                        )
+                                                        .context("extracting into temp file");
+                                                        result
+                                                    }
+                                                    .and_then(|wrote| {
+                                                        output_file
+                                                            .flush()
+                                                            .context("flushing")
+                                                            .and_then(|_| output_file.rewind().context("rewinding output file"))
+                                                            .and_then(|_| {
+                                                                wrote
+                                                                    .eq(&expected_size)
+                                                                    .then_some(output_file)
+                                                                    .with_context(|| format!("expected [{expected_size}], found [{wrote}]"))
+                                                            })
+                                                    })
+                                                })
+                                                .with_context(|| format!("when extracting entry {entry:#?}"))
+                                                .map_err(|e| {
+                                                    let error = Cow::Owned(format!("{e:?}"));
+                                                    sevenz_rust2::Error::Io(std::io::Error::other(e), error)
+                                                })
+                                                .map(|out| {
+                                                    output_data.push((original_file_path, super::ArchiveFileHandle::Zip(out)));
+                                                    extracting_files.pb_inc(1);
+                                                    !lookup.is_empty()
+                                                })
+                                        }),
+                                        None => {
+                                            std::io::copy(reader, &mut std::io::empty())?;
+                                            std::result::Result::<_, sevenz_rust2::Error>::Ok(!lookup.is_empty())
+                                        }
+                                    })
+                                    .with_context(|| format!("decoding chunk from [{block_idx}]"))
+                                    .map(|_| output_data)
+                                    .and_then(|data| match lookup.is_empty() {
+                                        true => Ok(data),
+                                        false => Err(anyhow::anyhow!(
+                                            "not all entries were extracted:\nextracted:\n{}\n\nremaining entries:\n{lookup:#?}",
+                                            data.len()
+                                        )),
+                                    })
+                            })
+                            .try_flat_map(|v| v.into_iter().map(Ok))
+                            .collect::<Result<Vec<_>>>()
+                    })
                     .context("extracting multiple paths failed")
             })
             .with_context(|| {
