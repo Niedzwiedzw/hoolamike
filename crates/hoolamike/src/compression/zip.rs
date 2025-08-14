@@ -1,6 +1,7 @@
 use {
     super::{ProcessArchive, *},
     crate::{progress_bars_v2::count_progress_style, utils::MaybeWindowsPath},
+    base64::{prelude::BASE64_STANDARD, Engine},
     std::{collections::BTreeMap, fs::File, io::BufWriter, path::PathBuf},
     tempfile::NamedTempFile,
     tracing_indicatif::span_ext::IndicatifSpanExt,
@@ -94,15 +95,17 @@ impl ProcessArchive for ZipArchive {
                 self.with_archive(|archive| {
                     files_to_extract
                         .into_iter()
-                        .map(|(archive_path, file)| {
-                            let span = info_span!("extracting_file", ?archive_path, ?file);
+                        .map(|(archive_path, file_name)| {
+                            let span = info_span!("extracting_file", ?archive_path, ?file_name);
 
                             archive
-                                .by_name(&file)
-                                .with_context(|| format!("opening [{file}] ({archive_path:#?})"))
+                                .by_name(&file_name)
+                                .with_context(|| format!("opening [{file_name}] ({archive_path:#?})"))
                                 .and_then(|mut file| {
                                     file.size().pipe(|expected_size| {
-                                        tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                                        tempfile::Builder::new()
+                                            .prefix(&file_name.as_str().pipe(|v| BASE64_STANDARD.encode(v)))
+                                            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                             .context("creating temp file")
                                             .and_then(|mut output| {
                                                 #[allow(clippy::let_and_return)]

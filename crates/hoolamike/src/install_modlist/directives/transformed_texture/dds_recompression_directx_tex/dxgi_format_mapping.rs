@@ -1,5 +1,6 @@
 use {crate::modlist_json::image_format::DXGIFormat, directxtex::DXGI_FORMAT};
 
+#[allow(dead_code)]
 pub fn map_dxgi_format(modlist: DXGIFormat) -> DXGI_FORMAT {
     match modlist {
         DXGIFormat::UNKNOWN => DXGI_FORMAT::DXGI_FORMAT_UNKNOWN,

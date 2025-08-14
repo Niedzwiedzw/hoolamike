@@ -300,7 +300,7 @@ where
                         .map(|new_remaining_length| {
                             new_remaining_length
                                 .pipe(NonZeroUsize::new)
-                                .pipe(|remaining_length| (read.map(|read| (read, remaining_length))))
+                                .pipe(|remaining_length| read.map(|read| (read, remaining_length)))
                         })
                 })
         }
@@ -343,6 +343,7 @@ enum OctodiffCommandProgress {
     Write { remaining_length: NonZeroUsize },
 }
 
+#[allow(dead_code)]
 #[extension_traits::extension(pub trait NonZeroUsizeExt)]
 impl NonZeroUsize
 where

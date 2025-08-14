@@ -2,6 +2,7 @@ use {
     super::{ProcessArchive, *},
     crate::utils::MaybeWindowsPath,
     anyhow::{Context, Result},
+    base64::{prelude::BASE64_STANDARD, Engine},
     itertools::Itertools,
     std::{collections::HashSet, path::PathBuf},
 };
@@ -84,7 +85,14 @@ impl ProcessArchive for ArchiveHandle {
                                                     .then_some(post_header.entry().filename.clone())
                                                 {
                                                     None => iterator = Some(post_header.skip().context("skipping entry")?),
-                                                    Some(archive_path) => tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                                                    Some(archive_path) => tempfile::Builder::new()
+                                                        .prefix(
+                                                            &archive_path
+                                                                .to_string_lossy()
+                                                                .to_string()
+                                                                .pipe(|v| BASE64_STANDARD.encode(v)),
+                                                        )
+                                                        .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                                         .context("creating temp file")
                                                         .and_then(|file| {
                                                             file.path()

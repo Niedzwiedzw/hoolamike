@@ -107,7 +107,7 @@ struct VariablesContext {
 
 impl VariablesContext {
     #[instrument(skip(self))]
-    fn resolve_variable(&self, maybe_with_variable: &str) -> Result<Cow<str>> {
+    fn resolve_variable(&self, maybe_with_variable: &str) -> Result<Cow<'_, str>> {
         match self::templating::find_template_marker(maybe_with_variable) {
             Some((left, variable_name, right)) => info_span!("variable_found", %variable_name)
                 .in_scope(|| match variable_name {

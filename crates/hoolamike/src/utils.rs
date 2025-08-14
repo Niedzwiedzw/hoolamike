@@ -1,10 +1,9 @@
 use {
-    crate::consts::TEMP_FILE_DIR,
     anyhow::Context,
     futures::FutureExt,
     itertools::Itertools,
     serde::{Deserialize, Serialize},
-    std::{convert::identity, future::Future, path::PathBuf, sync::Arc},
+    std::{convert::identity, future::Future, path::PathBuf},
     tap::prelude::*,
     tempfile::{NamedTempFile, TempPath},
     tracing::{debug_span, info_span},
@@ -130,35 +129,6 @@ impl<T: AsRef<std::path::Path>> T {
     }
 }
 
-#[derive(derive_more::Display, Debug, Clone)]
-pub struct ArcError(Arc<anyhow::Error>);
-
-pub type ArcResult<T> = std::result::Result<T, ArcError>;
-
-#[extension_traits::extension(pub trait AnyhowArcResultExt)]
-impl<T> anyhow::Result<T> {
-    fn arced(self) -> ArcResult<T> {
-        self.map_err(Arc::new).map_err(ArcError)
-    }
-}
-
-#[extension_traits::extension(pub trait ArcResultExt)]
-impl<T> ArcResult<T> {
-    fn into_inner_err(self) -> anyhow::Result<T> {
-        self.map_err(|e| Arc::try_unwrap(e.0.clone()).unwrap_or_else(|_| anyhow::anyhow!("{e:#?}")))
-    }
-}
-
-impl std::error::Error for ArcError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.0.source()
-    }
-
-    fn cause(&self) -> Option<&dyn std::error::Error> {
-        self.source()
-    }
-}
-
 // #[tracing::instrument(skip(task_fn))]
 pub(crate) fn spawn_rayon<T, F>(task_fn: F) -> impl Future<Output = anyhow::Result<T>>
 where
@@ -198,7 +168,10 @@ fn test_chunk_while() {
 }
 
 pub fn scoped_temp_file() -> anyhow::Result<NamedTempFile> {
-    tempfile::NamedTempFile::new_in(*TEMP_FILE_DIR).context("creating temp file")
+    tempfile::Builder::new()
+        .prefix("seeked-file-")
+        .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+        .context("creating temp file")
 }
 
 pub fn scoped_temp_path() -> anyhow::Result<TempPath> {

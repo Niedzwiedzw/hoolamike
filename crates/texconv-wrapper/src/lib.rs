@@ -826,6 +826,20 @@ impl<S: texconv_builder::State> TexconvBuilder<S> {
         self.bc_flags.push(bc_flag);
         self
     }
+    /// Adds a block compression flag (e.g., `Uniform`, `Dither`).
+    ///
+    /// # Arguments
+    /// * `bc_flag` - Block compression flag to add.
+    ///
+    /// # Aliases
+    /// - `add_bc_flag`
+    /// - `add_block_compress`
+    pub fn maybe_bc_flag(self, bc_flag: Option<BcFlag>) -> Self {
+        match bc_flag {
+            Some(f) => self.bc_flag(f),
+            None => self,
+        }
+    }
 
     /// Adds a normal map generation flag (e.g., `Red`, `Luminance`).
     ///

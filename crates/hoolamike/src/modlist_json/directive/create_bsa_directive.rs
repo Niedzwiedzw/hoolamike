@@ -1,4 +1,4 @@
-use {super::*, crate::serde_type_guard};
+use super::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,9 +41,6 @@ pub enum CreateBSADirective {
     Bsa(bsa::Bsa),
     Ba2(ba2::Ba2),
 }
-
-// used only for testing pretty much
-serde_type_guard!(CreateBSADirectiveTypeGuard, "CreateBSA");
 
 impl CreateBSADirective {
     pub fn size(&self) -> u64 {

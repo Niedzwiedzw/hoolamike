@@ -58,4 +58,8 @@ test_example!(
     test_directive_state_1,
     DirectiveState
 );
-test_example!(include_str!("./bsa-example-1.json"), test_bsa_example_1, WithTypeGuard<Bsa, super::CreateBSADirectiveTypeGuard>);
+
+#[cfg(test)]
+serde_type_guard!(CreateBSADirectiveTypeGuard, "CreateBSA");
+
+test_example!(include_str!("./bsa-example-1.json"), test_bsa_example_1, WithTypeGuard<Bsa, CreateBSADirectiveTypeGuard>);

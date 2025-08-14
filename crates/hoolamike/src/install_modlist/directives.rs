@@ -98,6 +98,7 @@ pub fn concurrency() -> usize {
     }
 }
 
+#[allow(dead_code)]
 #[extension_traits::extension(pub trait StreamTryFlatMapLocalExt)]
 impl<'iter, T, E, I> I
 where
@@ -121,6 +122,8 @@ where
         })
     }
 }
+
+#[allow(dead_code)]
 #[extension_traits::extension(pub trait StreamTryFlatMapExt)]
 impl<'iter, T, E, I> I
 where

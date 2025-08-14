@@ -129,7 +129,7 @@ pub(crate) mod extensions;
 pub(crate) mod consts {
     use {once_cell::sync::Lazy, std::path::Path, tap::prelude::*};
     pub static TEMP_FILE_DIR: Lazy<&'static Path> =
-        Lazy::new(|| Path::new(".hoolamike/TEMP_FILES").tap(|path| std::fs::create_dir_all(path).expect("could not create temporary dir storage")));
+        Lazy::new(|| Path::new("HOOLAMIKE_TEMP_FILES").tap(|path| std::fs::create_dir_all(path).expect("could not create temporary dir storage")));
 }
 
 pub fn tokio_runtime_single() -> Result<tokio::runtime::Runtime> {

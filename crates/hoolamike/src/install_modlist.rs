@@ -14,7 +14,7 @@ use {
     anyhow::Context,
     directives::{concurrency, transformed_texture::TexconvProtonState, DirectivesHandler, DirectivesHandlerConfig},
     download_cache::validate_hash_sha512,
-    downloads::{stream_file, stream_file_validate, Synchronizers},
+    downloads::{stream_file_validate, Synchronizers},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
     std::{future::ready, path::Path, sync::Arc},
@@ -39,18 +39,18 @@ fn setup_texconv_proton(
 ) -> anyhow::Result<TexconvProtonState> {
     #[rustfmt::skip]
     const TEXCONV_DEPS: &[(&str, &str, Option<&str>, &[&str])] = &[
-        // (
-        //     "https://aka.ms/vs/17/release/vc_redist.x64.exe",
-        //     "vc_redist.x64.exe",
-        //     None,
-        //     &["/q"],
-        // ),
-        // (
-        //     "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/9.0.7/windowsdesktop-runtime-9.0.7-win-x64.exe",
-        //     "windowsdesktop-runtime-9.0.7-win-x64.exe",
-        //     None,
-        //     &["/quiet", "/passive", "/norestart"],
-        // ),
+        (
+            "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+            "vc_redist.x64.exe",
+            None,
+            &["/q"],
+        ),
+        (
+            "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/9.0.7/windowsdesktop-runtime-9.0.7-win-x64.exe",
+            "windowsdesktop-runtime-9.0.7-win-x64.exe",
+            None,
+            &["/quiet", "/passive", "/norestart"],
+        ),
     ];
     TEXCONV_DEPS
         .pipe(futures::stream::iter)
@@ -81,7 +81,7 @@ fn setup_texconv_proton(
                     steam_path: steam_path.pipe_deref(canonicalize)?,
                     show_gui: false,
                     prefix_dir: tempfile::Builder::new()
-                        .prefix("pfx")
+                        .prefix("pfx-")
                         .tempdir_in(*TEMP_FILE_DIR)
                         .context("creating temp directory for prefix")
                         .map(Arc::new)?,

@@ -7,7 +7,7 @@ use {
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     proton_wrapper::proton_context::{Initialized, ProtonContext},
     std::io::{Read, Write},
-    tracing::warn,
+    tracing::{ warn},
 };
 
 #[derive(Debug, Clone)]
@@ -25,7 +25,8 @@ pub struct TransformedTextureHandler {
     pub texconv_proton_state: Option<TexconvProtonState>,
 }
 
-#[extension_traits::extension(pub trait IoResultValidateSizeExt)]
+#[allow(dead_code)]
+#[extension_traits::extension(trait IoResultValidateSizeExt)]
 impl std::io::Result<u64> {
     fn and_validate_size(self, expected_size: u64) -> anyhow::Result<u64> {
         self.context("performing read").and_then(|size| {
@@ -120,7 +121,7 @@ impl TransformedTextureHandler {
                                     }
                                 })
                                 // .or_else(|e| {
-                                //     warn!("other texture recompression methods (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n");
+                                //     error!("other texture recompression methods (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n");
                                 //     dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
                                 //         .context("resizing using directx_tex")
                                 //         .with_context(|| format!("tried because:\n{e:?}"))

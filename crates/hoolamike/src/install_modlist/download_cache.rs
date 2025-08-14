@@ -137,6 +137,17 @@ pub fn to_u64_from_base_64(input: String) -> Result<u64> {
         .context("decoding string as hashed bytes")
 }
 
+pub fn sha512_hex_string(input: &[u8]) -> String {
+    // Create a Sha512 object
+    let mut hasher = Sha512::new();
+    // Write input message
+    hasher.update(input);
+    // Read hash digest and consume the hasher
+    let result = hasher.finalize();
+    // Convert the result (byte array) to lowercase hex string
+    hex::encode(result)
+}
+
 pub async fn validate_hash_sha512(path: PathBuf, expected_hash_str: &str) -> Result<PathBuf> {
     calculate_hash_sha512(path.clone())
         .and_then(|hash| {

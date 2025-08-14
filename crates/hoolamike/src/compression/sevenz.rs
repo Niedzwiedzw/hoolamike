@@ -1,6 +1,7 @@
 use {
     super::{ProcessArchive, *},
     crate::{progress_bars_v2::count_progress_style, utils::MaybeWindowsPath},
+    base64::{prelude::BASE64_STANDARD, Engine},
     std::{
         borrow::Cow,
         collections::{BTreeMap, HashMap},
@@ -81,7 +82,9 @@ impl<R: Read + Seek> ProcessArchive for ::sevenz_rust2::ArchiveReader<R> {
                 self.for_each_entries(|entry, reader| match lookup.remove(&entry.name) {
                     Some(original_file_path) => entry.size().pipe(|expected_size| {
                         let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
-                        tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                        tempfile::Builder::new()
+                            .prefix(&entry.name.as_str().pipe(|v| BASE64_STANDARD.encode(v)))
+                            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                             .context("creating temp file")
                             .and_then(|mut output_file| {
                                 #[allow(clippy::let_and_return)]
@@ -149,7 +152,6 @@ mod tests {
     use {
         rand::Rng,
         rayon::iter::{IntoParallelIterator, ParallelIterator},
-        std::convert::identity,
         tempfile::NamedTempFile,
         tracing::info,
     };
@@ -234,7 +236,7 @@ mod tests {
                                 paths
                                     .iter()
                                     .map(|(_, path)| path.as_path())
-                                    .filter_map(|f| rand::thread_rng().gen::<bool>().then_some(f))
+                                    .filter(|_| rand::thread_rng().gen::<bool>())
                                     .collect::<Vec<_>>()
                                     .pipe(|paths| archive.get_many_handles(&paths))
                                     .map(|extracted| {

@@ -898,7 +898,7 @@ impl LoadedTrack {
             for chan in indata_slices.iter_mut() {
                 *chan = chan
                     .get(nbr_in..)
-                    .with_context(|| ("invalid slice: [{nbr_in}..]"))?;
+                    .with_context(|| format!("invalid slice: [{nbr_in}..]"))?;
             }
             append_frames(&mut resampled_track.channels, &outbuffer, nbr_out)?;
             input_frames_next = resampler.input_frames_next();

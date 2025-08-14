@@ -3,6 +3,7 @@ use {
     crate::{progress_bars_v2::io_progress_style, utils::MaybeWindowsPath},
     ::compress_tools::*,
     anyhow::{Context, Result},
+    base64::{prelude::BASE64_STANDARD, Engine},
     itertools::Itertools,
     num::ToPrimitive,
     std::{
@@ -43,7 +44,14 @@ impl ArchiveHandle {
             })
             .and_then(|lookup| {
                 self.0.rewind().context("rewinding file")?;
-                tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                tempfile::Builder::new()
+                    .prefix(
+                        &for_path
+                            .to_string_lossy()
+                            .to_string()
+                            .pipe(|p| BASE64_STANDARD.encode(p)),
+                    )
+                    .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                     .context("creating temporary file for output")
                     .and_then(|mut temp_file| {
                         {
@@ -107,27 +115,34 @@ impl ProcessArchive for ArchiveHandle {
                                     .and_then(|mut iterator| {
                                         iterator
                                             .try_fold((vec![], info_span!("current_file").entered()), |(mut acc, span), entry| match entry {
-                                                ArchiveContents::StartOfEntry(entry_path, stat) => entry_path.pipe(PathBuf::from).pipe(|entry_path| {
-                                                    drop(span);
+                                                ArchiveContents::StartOfEntry(entry_path_string, stat) => {
+                                                    entry_path_string
+                                                        .as_str()
+                                                        .pipe(PathBuf::from)
+                                                        .pipe(|entry_path| {
+                                                            drop(span);
 
-                                                    validated_paths
-                                                        .remove(entry_path.as_path())
-                                                        .then_some(entry_path.clone())
-                                                        .with_context(|| format!("unrequested entry: {entry_path:?}"))
-                                                        .and_then(|path| {
-                                                            let temp_file = tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
-                                                                .context("creating a temp file for output")?;
-                                                            Ok((
-                                                                acc.tap_mut(|acc| acc.push((path, stat.st_size, temp_file))),
-                                                                info_span!("current_file", entry_path=%entry_path.display())
-                                                                    .tap_mut(|pb| {
-                                                                        pb.pb_set_length(stat.st_size as u64);
-                                                                        pb.pb_set_style(&io_progress_style());
-                                                                    })
-                                                                    .entered(),
-                                                            ))
+                                                            validated_paths
+                                                                .remove(entry_path.as_path())
+                                                                .then_some(entry_path.clone())
+                                                                .with_context(|| format!("unrequested entry: {entry_path:?}"))
+                                                                .and_then(|path| {
+                                                                    let temp_file = tempfile::Builder::new()
+                                                                        .prefix(&entry_path_string)
+                                                                        .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+                                                                        .context("creating a temp file for output")?;
+                                                                    Ok((
+                                                                        acc.tap_mut(|acc| acc.push((path, stat.st_size, temp_file))),
+                                                                        info_span!("current_file", entry_path=%entry_path.display())
+                                                                            .tap_mut(|pb| {
+                                                                                pb.pb_set_length(stat.st_size as u64);
+                                                                                pb.pb_set_style(&io_progress_style());
+                                                                            })
+                                                                            .entered(),
+                                                                    ))
+                                                                })
                                                         })
-                                                }),
+                                                }
                                                 ArchiveContents::DataChunk(chunk) => acc
                                                     .last_mut()
                                                     .context("no write in progress")

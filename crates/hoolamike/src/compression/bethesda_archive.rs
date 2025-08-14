@@ -7,6 +7,7 @@ use {
     },
     anyhow::{Context, Result},
     ba2::{BStr, ByteSlice, Reader},
+    base64::{prelude::BASE64_STANDARD, Engine},
     itertools::Itertools,
     normalize_path::NormalizePath,
     std::{
@@ -53,7 +54,7 @@ impl Fallout4Archive<'_> {
     }
 }
 
-fn try_utf8(bstr: &BStr) -> Cow<str> {
+fn try_utf8(bstr: &BStr) -> Cow<'_, str> {
     bstr.to_str()
         .map(Cow::Borrowed)
         .context("file name is not a valid string")
@@ -118,7 +119,14 @@ impl super::ProcessArchive for Fallout4Archive<'_> {
                             .remove(*path)
                             .with_context(|| format!("path [{}] not found in [{:#?}]", path.display(), source_paths.keys().collect_vec()))
                             .and_then(|repr| {
-                                tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                                tempfile::Builder::new()
+                                    .prefix(
+                                        &path
+                                            .to_string_lossy()
+                                            .to_string()
+                                            .pipe(|v| BASE64_STANDARD.encode(v)),
+                                    )
+                                    .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                                     .context("creating temporary file for output")
                                     .map(|output| (repr, output))
                             })

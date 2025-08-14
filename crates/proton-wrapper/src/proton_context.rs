@@ -193,11 +193,13 @@ impl ProtonContext {
     #[instrument]
     pub fn initialize(self) -> Result<Initialized<Self>> {
         debug!("initializing proton context");
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+
         let Self {
             proton_path: _,
             prefix_dir,
             steam_path: _,
-            show_gui,
+            show_gui: _,
         } = &self;
         PROTON_WRAPPER_SHELL
             .mount(prefix_dir.path())
@@ -243,6 +245,7 @@ pub struct WrappedCommand {
 
 const APP_ID: &str = "proton-wrapper-logging";
 
+#[allow(dead_code)]
 fn make_fifo_pipe(at: PathBuf) -> Result<PathBuf> {
     nix::unistd::mkfifo(&at, nix::sys::stat::Mode::S_IRWXU)
         .context("creating pipe for stdout")
@@ -253,13 +256,14 @@ fn make_fifo_pipe(at: PathBuf) -> Result<PathBuf> {
 impl ProtonContext {
     fn wrap_inner(&self, command: &mut Command, ipc: &MoutnedProtonWrapperShell) -> Result<WrappedCommand> {
         let Self {
-            proton_path,
+            proton_path: _,
             prefix_dir,
             steam_path,
             show_gui,
         } = self;
         debug!("wrapping command [{command:?}]");
-        let mut wrapped = Command::new(proton_path);
+        // let mut wrapped = Command::new(proton_path);
+        let mut wrapped = Command::new("wine");
 
         let log_directory = tempfile::Builder::new()
             .prefix("log_directory")
@@ -278,7 +282,7 @@ impl ProtonContext {
         wrapped
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .arg("run")
+            // .arg("run")
             .arg(
                 ipc.bin_path
                     .pipe_deref(host_to_pfx_path)
@@ -300,6 +304,7 @@ impl ProtonContext {
             // .env("PROTON_LOG", "1")
             // .env("PROTON_LOG_DIR", log_directory.path())
             .env("STEAM_COMPAT_DATA_PATH", prefix_dir.path())
+            .env("WINEPREFIX", prefix_dir.path())
             .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path)
             .env("SteamGameId", APP_ID);
 
@@ -372,7 +377,11 @@ mod tests {
         debug!("testing if it works");
         ProtonContext {
             proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton".into(),
-            prefix_dir: Arc::new(TempDir::new()?),
+            prefix_dir: Arc::new(
+                tempfile::Builder::new()
+                    .prefix("pfx-")
+                    .tempdir_in(env!("CARGO_MANIFEST_DIR"))?,
+            ),
             steam_path: "/home/niedzwiedz/.local/share/Steam".into(),
             show_gui: false,
         }

@@ -317,7 +317,9 @@ where
 {
     fn seek_with_temp_file_blocking_raw(mut self, expected_size: u64) -> Result<(u64, tempfile::TempPath)> {
         let _span = tracing::info_span!("seek_with_temp_file_blocking_raw").entered();
-        tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+        tempfile::Builder::new()
+            .prefix("seeked-file-")
+            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
             .context("creating a tempfile")
             .and_then(|mut temp_file| {
                 {
@@ -349,7 +351,9 @@ where
     }
     fn seek_with_temp_file_blocking(mut self, expected_size: u64, permit: tokio::sync::OwnedSemaphorePermit) -> Result<WithPermit<tempfile::TempPath>> {
         let _span = tracing::info_span!("seek_with_temp_file_blocking").entered();
-        tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+        tempfile::Builder::new()
+            .prefix("seeked-file-")
+            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
             .context("creating a tempfile")
             .and_then(|mut temp_file| {
                 {
@@ -388,7 +392,9 @@ where
             cloned![span];
             move || {
                 let span = span.entered();
-                tempfile::NamedTempFile::new_in(*crate::consts::TEMP_FILE_DIR)
+                tempfile::Builder::new()
+                    .prefix("seeked-file-")
+                    .tempfile_in(*crate::consts::TEMP_FILE_DIR)
                     .context("creating a tempfile")
                     .and_then(|mut temp_file| {
                         {

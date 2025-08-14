@@ -1,6 +1,6 @@
 use {
     anyhow::{Context, Result},
-    clap::{Parser, Subcommand},
+    clap::Parser,
     proton_wrapper::ipc::{SerializedCommand, WrappedStdout},
     std::{
         fs::File,
@@ -9,7 +9,7 @@ use {
         process::Stdio,
     },
     tap::{Pipe, Tap},
-    tracing::{info, info_span},
+    tracing::info,
 };
 
 #[derive(Parser)]
