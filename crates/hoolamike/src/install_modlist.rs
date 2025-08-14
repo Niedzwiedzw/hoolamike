@@ -12,7 +12,7 @@ use {
         DebugHelpers,
     },
     anyhow::Context,
-    directives::{concurrency, transformed_texture::TexconvProtonState, DirectivesHandler, DirectivesHandlerConfig},
+    directives::{concurrency, transformed_texture::TexconvWineState, DirectivesHandler, DirectivesHandlerConfig},
     download_cache::validate_hash_sha512,
     downloads::{stream_file_validate, Synchronizers},
     futures::{FutureExt, TryFutureExt},
@@ -29,10 +29,7 @@ pub mod download_cache;
 pub mod downloads;
 
 #[instrument]
-fn setup_texconv_proton(
-    at: &Path,
-    texconv_wine::ExtensionConfig { wine_path, texconv_path }: texconv_wine::ExtensionConfig,
-) -> anyhow::Result<TexconvProtonState> {
+fn setup_texconv_wine(at: &Path, texconv_wine::ExtensionConfig { wine_path, texconv_path }: texconv_wine::ExtensionConfig) -> anyhow::Result<TexconvWineState> {
     #[rustfmt::skip]
     const TEXCONV_DEPS: &[(&str, &str, Option<&str>, &[&str])] = &[
         (
@@ -70,9 +67,9 @@ fn setup_texconv_proton(
         .pipe(|task| tokio_runtime_multi(TEXCONV_DEPS.len().max(1)).and_then(|rt| rt.block_on(task)))
         .and_then(|downloaded| {
             let canonicalize = |path: &Path| std::fs::canonicalize(path).with_context(|| format!("could not canonicalize [{path:?}]"));
-            anyhow::Ok(TexconvProtonState {
+            anyhow::Ok(TexconvWineState {
                 texconv_path: texconv_path.pipe_deref(canonicalize)?,
-                proton_prefix_state: proton_wrapper::proton_context::WineContext {
+                wine_prefix_state: wine_wrapper::wine_context::WineContext {
                     wine_path: wine_path.pipe_deref(canonicalize)?,
                     show_gui: false,
                     prefix_dir: tempfile::Builder::new()
@@ -82,7 +79,7 @@ fn setup_texconv_proton(
                         .map(Arc::new)?,
                 }
                 .initialize_with_installs(&downloaded)
-                .context("could not initialize proton context for texconv")
+                .context("could not initialize wine context for texconv")
                 .map(Arc::new)?,
             })
         })
@@ -108,11 +105,11 @@ pub fn install_modlist(
         contains,
     }: DebugHelpers,
 ) -> TotalResult<()> {
-    let texconv_proton_state = extras
+    let texconv_wine_state = extras
         .as_ref()
-        .and_then(|extras| extras.texconv_proton.as_ref())
+        .and_then(|extras| extras.texconv_wine.as_ref())
         .cloned()
-        .map(|texconv_config| setup_texconv_proton(&installation_path, texconv_config))
+        .map(|texconv_config| setup_texconv_wine(&installation_path, texconv_config))
         .transpose()
         .context("texconv config was specified, but it could not be set up")
         .map_err(|e| vec![e])?;
@@ -210,7 +207,7 @@ pub fn install_modlist(
                                     output_directory: installation_path,
                                     game_directory: game_config.root_directory.clone(),
                                     downloads_directory: downloaders.downloads_directory.clone(),
-                                    texconv_proton_state,
+                                    texconv_wine_state,
                                 },
                                 summary,
                             )

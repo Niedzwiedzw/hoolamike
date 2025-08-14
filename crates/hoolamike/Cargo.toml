@@ -100,7 +100,7 @@ sevenz-rust2 = { version = "0.17", features = [
   "zstd",
 ] }
 texconv-wrapper.workspace = true
-proton-wrapper.workspace = true
+wine-wrapper.workspace = true
 sha2 = "0.10.9"
 # tikv-jemallocator = "0.6.0"
 

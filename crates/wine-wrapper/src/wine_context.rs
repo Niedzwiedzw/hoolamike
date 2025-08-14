@@ -1,5 +1,5 @@
 use {
-    crate::ipc::{ProtonWrapperShellBin, SerializedCommand, WrappedStdout},
+    crate::ipc::{SerializedCommand, WineWrapperShellBin, WrappedStdout},
     anyhow::{anyhow, Context, Result},
     itertools::Itertools,
     std::{
@@ -16,21 +16,22 @@ use {
     typed_path::{Utf8UnixPath, Utf8WindowsPath, Utf8WindowsPathBuf},
 };
 
-static PROTON_WRAPPER_SHELL: ProtonWrapperShellBin = ProtonWrapperShellBin(include_bytes!("../proton-wrapper-shell.exe"));
+// static WINE_WRAPPER_SHELL: WineWrapperShellBin = WineWrapperShellBin(include_bytes!("../wine-wrapper-shell.exe"));
+static WINE_WRAPPER_SHELL: WineWrapperShellBin = WineWrapperShellBin(&[]);
 
-static SHELL_NAME: &str = "proton-wrapper-shell.exe";
+static SHELL_NAME: &str = "wine-wrapper-shell.exe";
 
 #[derive(Debug, Clone)]
-pub struct MoutnedProtonWrapperShell {
+pub struct MoutnedWineWrapperShell {
     pub bin_path: PathBuf,
 }
 
-impl ProtonWrapperShellBin {
-    pub fn mount(self, at: &Path) -> Result<MoutnedProtonWrapperShell> {
+impl WineWrapperShellBin {
+    pub fn mount(self, at: &Path) -> Result<MoutnedWineWrapperShell> {
         at.join(SHELL_NAME).pipe(|bin_path| {
             std::fs::write(&bin_path, self.0)
                 .context("injecting the binary")
-                .map(|_| MoutnedProtonWrapperShell { bin_path })
+                .map(|_| MoutnedWineWrapperShell { bin_path })
         })
     }
 }
@@ -42,18 +43,18 @@ pub struct WineContext {
     pub show_gui: bool,
 }
 
-pub trait CommandWrapInProtonExt {
-    fn wrap_in_proton(&mut self, context: &Initialized<WineContext>) -> Result<WrappedCommand>;
+pub trait CommandWrapInWineExt {
+    fn wrap_in_wine(&mut self, context: &Initialized<WineContext>) -> Result<WrappedCommand>;
 }
 
-impl CommandWrapInProtonExt for Command {
-    fn wrap_in_proton(&mut self, context: &Initialized<WineContext>) -> Result<WrappedCommand> {
+impl CommandWrapInWineExt for Command {
+    fn wrap_in_wine(&mut self, context: &Initialized<WineContext>) -> Result<WrappedCommand> {
         context.wrap(self)
     }
 }
 
 #[derive(Debug)]
-pub struct Initialized<T>(T, MoutnedProtonWrapperShell);
+pub struct Initialized<T>(T, MoutnedWineWrapperShell);
 
 #[extension_traits::extension(pub trait CommandBetterOutputExt)]
 impl Command {
@@ -125,7 +126,7 @@ impl WrappedCommand {
                         all_output
                             .lines()
                             .map(|l| l.trim())
-                            .filter(|l| l.starts_with("proton_wrapper_shell:").not())
+                            .filter(|l| l.starts_with("wine_wrapper_shell:").not())
                             .join("\n")
                             .tap(|output| debug!("trimmed output:\n{output}"))
                     })
@@ -135,7 +136,7 @@ impl WrappedCommand {
             //     Err(error) => Err(error).with_context,
             // })
             .with_context(|| format!("when running command: [{:#?}]", self.serialized_command))
-            .with_context(|| format!("when running proton command command: {:?}", self.wrapped_command))
+            .with_context(|| format!("when running wine command command: {:?}", self.wrapped_command))
             .with_context(|| {
                 self.wrapped_stdio
                     .clone()
@@ -189,7 +190,7 @@ impl WineContext {
                                         info!("installing [{path:?}]");
                                         std::process::Command::new(path.as_path())
                                             .args(*args)
-                                            .wrap_in_proton(&context)
+                                            .wrap_in_wine(&context)
                                             .and_then(|command| command.output_blocking().map(|_| ()))
                                             .and_then(|_| context.0.wait_wineserver_idle())
                                     })
@@ -198,11 +199,11 @@ impl WineContext {
                     })
                     .map(|_| context)
             })
-            .tap_ok(|_| info!("[OK] proton context initialized"))
+            .tap_ok(|_| info!("[OK] wine context initialized"))
     }
     #[instrument]
     pub fn initialize(self) -> Result<Initialized<Self>> {
-        debug!("initializing proton context");
+        debug!("initializing wine context");
         std::thread::sleep(std::time::Duration::from_millis(1000));
 
         let Self {
@@ -210,9 +211,9 @@ impl WineContext {
             prefix_dir,
             show_gui: _,
         } = &self;
-        PROTON_WRAPPER_SHELL
+        WINE_WRAPPER_SHELL
             .mount(prefix_dir.path())
-            .context("mounting proton wrapper shell")
+            .context("mounting wine wrapper shell")
             .and_then(|mounted| {
                 let mut command = Command::new("cmd.exe");
                 command
@@ -234,7 +235,7 @@ impl WineContext {
                             false => Err(anyhow!("expected 'TEST', found '{output}'")),
                         }
                     })
-                    .with_context(|| format!("initializing proton context for {self:#?}"))
+                    .with_context(|| format!("initializing wine context for {self:#?}"))
                     .map(|_| Initialized(self, mounted))
             })
     }
@@ -249,10 +250,10 @@ pub struct WrappedCommand {
     wrapped_command: Command,
     serialized_command: SerializedCommand,
     wrapped_stdio: WrappedStdout<PathBuf>,
-    mounted_shell_wrapper: MoutnedProtonWrapperShell,
+    mounted_shell_wrapper: MoutnedWineWrapperShell,
 }
 
-const APP_ID: &str = "proton-wrapper-logging";
+const APP_ID: &str = "wine-wrapper-logging";
 
 #[allow(dead_code)]
 fn make_fifo_pipe(at: PathBuf) -> Result<PathBuf> {
@@ -263,14 +264,14 @@ fn make_fifo_pipe(at: PathBuf) -> Result<PathBuf> {
 }
 
 impl WineContext {
-    fn wrap_inner(&self, command: &mut Command, ipc: &MoutnedProtonWrapperShell) -> Result<WrappedCommand> {
+    fn wrap_inner(&self, command: &mut Command, ipc: &MoutnedWineWrapperShell) -> Result<WrappedCommand> {
         let Self {
             wine_path: _,
             prefix_dir,
             show_gui,
         } = self;
         debug!("wrapping command [{command:?}]");
-        // let mut wrapped = Command::new(proton_path);
+        // let mut wrapped = Command::new(wine_path);
         let mut wrapped = Command::new("wine");
 
         let log_directory = tempfile::Builder::new()
@@ -391,7 +392,7 @@ mod tests {
             Command::new("cmd.exe")
                 .arg("/c")
                 .arg(r#"echo ACTUAL TEST"#)
-                .wrap_in_proton(&c)
+                .wrap_in_wine(&c)
                 .and_then(|c| c.output_blocking())
                 .and_then(|o| match o.trim().eq("ACTUAL TEST") {
                     true => Ok(()),

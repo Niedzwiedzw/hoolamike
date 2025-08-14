@@ -1,7 +1,6 @@
 use {
     anyhow::{Context, Result},
     clap::Parser,
-    proton_wrapper::ipc::{SerializedCommand, WrappedStdout},
     std::{
         fs::File,
         ops::Not,
@@ -10,6 +9,7 @@ use {
     },
     tap::{Pipe, Tap},
     tracing::info,
+    wine_wrapper::ipc::{SerializedCommand, WrappedStdout},
 };
 
 #[derive(Parser)]

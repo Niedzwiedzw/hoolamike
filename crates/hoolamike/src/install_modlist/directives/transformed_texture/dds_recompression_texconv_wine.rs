@@ -1,11 +1,10 @@
 // Import the Texconv builder and related enums
 use {
     crate::{compression::SeekWithTempFileExt, consts::TEMP_FILE_DIR, modlist_json::image_format::DXGIFormat},
-    ::proton_wrapper::proton_context::{Initialized, WineContext},
     ::texconv_wrapper::{BcFlag, FileType, ImageFilter, Texconv},
+    ::wine_wrapper::wine_context::{Initialized, WineContext},
     anyhow::{Context, Result},
     itertools::Itertools,
-    proton_wrapper::proton_context::CommandWrapInProtonExt,
     std::{
         io::{Read, Write},
         num::NonZeroU32,
@@ -13,6 +12,7 @@ use {
     },
     tap::{Pipe, TapFallible},
     tracing::info,
+    wine_wrapper::wine_context::CommandWrapInWineExt,
 };
 
 mod dxgi_format_mapping;
@@ -34,7 +34,7 @@ pub fn resize_dds<R, W>(
     target_mipmaps: u32,
     output: &mut W,
     texconv_binary: &Path,
-    proton_context: &Initialized<WineContext>,
+    wine_context: &Initialized<WineContext>,
     extension: &str,
 ) -> Result<u64>
 where
@@ -57,10 +57,10 @@ where
                 })
         })
         .and_then(|(format_str, input_file, output_dir)| {
-            Texconv::builder(proton_context.host_to_pfx_path(texconv_binary)?.to_string())
-                .input_file(proton_context.host_to_pfx_path(&input_file)?.to_string())
+            Texconv::builder(wine_context.host_to_pfx_path(texconv_binary)?.to_string())
+                .input_file(wine_context.host_to_pfx_path(&input_file)?.to_string())
                 .output_dir(
-                    proton_context
+                    wine_context
                         .host_to_pfx_path(output_dir.path())?
                         .to_string(),
                 )
@@ -80,10 +80,10 @@ where
                 .single_proc(true)
                 .build()
                 .command()
-                .wrap_in_proton(proton_context)
+                .wrap_in_wine(wine_context)
                 .and_then(|command| spanned!(command.output_blocking()))
                 .map(|output| info!("{output}"))
-                .context("spawning proton command")
+                .context("spawning wine command")
                 .and_then(|()| {
                     std::fs::read_dir(output_dir.path())
                         .context("reading output dir")
@@ -103,8 +103,8 @@ where
                                 .and_then(|mut result| std::io::copy(&mut result, output).context("copying output into output buffer"))
                         })
                 })
-                .context("trying to resize texture using texconv + proton")
-                .tap_ok(|size| info!("texconv proton success: {size}"))
+                .context("trying to resize texture using texconv + wine")
+                .tap_ok(|size| info!("texconv wine success: {size}"))
                 .pipe(|reason| match reason {
                     Ok(v) => Ok(v),
                     Err(reason) => {
@@ -135,26 +135,3 @@ where
                 })
         })
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     #[test_log::test]
-//     fn test_basic() -> Result<()> {
-//     // proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton"
-//     // prefix_dir: "texconv-pfx"
-//     // steam_path: "/home/niedzwiedz/.local/share/Steam"
-//     // texconv_path: "texconv-pfx/texconv.exe"
-
-//         let proton_context = ProtonContext {
-//             proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton".into(),
-//             prefix_dir: "/tmp/test-pfx",
-//             steam_path: "/home/niedzwiedz/.local/share/Steam".to_owned(),
-//         };
-//         let context = proton_context.initialize()?;
-//         let input = std::io::Cursor::new(include_bytes!())
-//         super::resize_dds(input, target_width, target_height, target_format, target_mipmaps, output, texconv_binary, proton_context)
-
-//         Ok(())
-//     }
-// }

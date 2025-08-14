@@ -5,15 +5,15 @@ use {
         progress_bars_v2::IndicatifWrapIoExt,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
-    proton_wrapper::proton_context::{Initialized, WineContext},
+    wine_wrapper::wine_context::{Initialized, WineContext},
     std::io::{Read, Write},
     tracing::{ warn},
 };
 
 #[derive(Debug, Clone)]
-pub struct TexconvProtonState {
+pub struct TexconvWineState {
     pub texconv_path: PathBuf,
-    pub proton_prefix_state: Arc<Initialized<WineContext>>,
+    pub wine_prefix_state: Arc<Initialized<WineContext>>,
 }
 
 #[derive(Clone, derivative::Derivative)]
@@ -22,7 +22,7 @@ pub struct TransformedTextureHandler {
     pub output_directory: PathBuf,
     #[derivative(Debug = "ignore")]
     pub download_summary: DownloadSummary,
-    pub texconv_proton_state: Option<TexconvProtonState>,
+    pub texconv_wine_state: Option<TexconvWineState>,
 }
 
 #[allow(dead_code)]
@@ -40,7 +40,7 @@ impl std::io::Result<u64> {
 // #[cfg(feature = "dds_recompression")]
 mod dds_recompression;
 mod dds_recompression_directx_tex;
-mod dds_recompression_texconv_proton;
+mod dds_recompression_texconv_wine;
 
 #[cfg(feature = "intel_tex")]
 mod dds_recompression_intel_tex;
@@ -83,15 +83,15 @@ impl TransformedTextureHandler {
                             let mut reader = tracing::Span::current().wrap_read(size, from);
                             Err(anyhow::anyhow!("trying multiple algorithms"))
                                 .or_else(|reason| {
-                                    self.texconv_proton_state
+                                    self.texconv_wine_state
                                         .as_ref()
-                                        .context("texconv+proton not set up, gonna try slow methods")
+                                        .context("texconv+wine not set up, gonna try slow methods")
                                         .and_then(
-                                            |TexconvProtonState {
+                                            |TexconvWineState {
                                                  texconv_path,
-                                                 proton_prefix_state,
+                                                 wine_prefix_state,
                                              }| {
-                                                dds_recompression_texconv_proton::resize_dds(
+                                                dds_recompression_texconv_wine::resize_dds(
                                                     &mut reader,
                                                     width,
                                                     height,
@@ -99,7 +99,7 @@ impl TransformedTextureHandler {
                                                     mip_levels,
                                                     &mut writer,
                                                     texconv_path,
-                                                    proton_prefix_state.as_ref(),
+                                                    wine_prefix_state.as_ref(),
                                                     to_path.clone().into_path().extension().with_context(|| format!("no extension on [{to_path}]")).map(|e| e.to_string_lossy())?.as_ref()
                                                 )
                                                 .with_context(|| format!("tried because:\n{reason:?}"))

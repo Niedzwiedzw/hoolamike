@@ -35,7 +35,7 @@ use {
     tap::prelude::*,
     tracing::{info_span, instrument, Instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
-    transformed_texture::TexconvProtonState,
+    transformed_texture::TexconvWineState,
     wabbajack_file_handle::WabbajackFileHandle,
 };
 
@@ -80,7 +80,7 @@ pub struct DirectivesHandlerConfig {
     pub output_directory: PathBuf,
     pub game_directory: PathBuf,
     pub downloads_directory: PathBuf,
-    pub texconv_proton_state: Option<TexconvProtonState>,
+    pub texconv_wine_state: Option<TexconvWineState>,
 }
 
 pub mod nested_archive_manager;
@@ -241,7 +241,7 @@ impl DirectivesHandler {
             output_directory,
             game_directory,
             downloads_directory,
-            texconv_proton_state,
+            texconv_wine_state,
         } = config.clone();
         let download_summary: DownloadSummary = sync_summary
             .into_iter()
@@ -278,7 +278,7 @@ impl DirectivesHandler {
             transformed_texture: transformed_texture::TransformedTextureHandler {
                 output_directory: output_directory.clone(),
                 download_summary: download_summary.clone(),
-                texconv_proton_state,
+                texconv_wine_state,
             },
             download_summary,
         }

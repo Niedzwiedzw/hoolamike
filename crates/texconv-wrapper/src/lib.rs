@@ -289,7 +289,7 @@ pub enum RecursiveMode {
 pub struct Texconv {
     /// Path to the `texconv.exe` executable.
     ///
-    /// Must point to the Windows `texconv.exe`, typically run via Proton on Linux.
+    /// Must point to the Windows `texconv.exe`, typically run via Wine on Linux.
     ///
     /// # Aliases
     /// - `executable`

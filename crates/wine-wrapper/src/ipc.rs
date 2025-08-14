@@ -41,11 +41,11 @@ impl WrappedStdout<PathBuf> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ProtonWrapperShellBin(pub &'static [u8]);
+pub(crate) struct WineWrapperShellBin(pub &'static [u8]);
 
-impl std::fmt::Debug for ProtonWrapperShellBin {
+impl std::fmt::Debug for WineWrapperShellBin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ProtonWrapperShellBin")
+        write!(f, "WineWrapperShellBin")
     }
 }
 

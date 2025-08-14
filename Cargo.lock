@@ -1789,7 +1789,6 @@ dependencies = [
  "omnom",
  "once_cell",
  "parking_lot",
- "proton-wrapper",
  "rand 0.8.5",
  "rayon",
  "regex",
@@ -1825,6 +1824,7 @@ dependencies = [
  "uuid",
  "vcpkg",
  "walkdir",
+ "wine-wrapper",
  "winreg",
  "wrapped-7zip",
  "xdelta",
@@ -3181,39 +3181,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
  "prost",
-]
-
-[[package]]
-name = "proton-wrapper"
-version = "0.17.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "bytemuck",
- "extension-traits",
- "itertools 0.13.0",
- "nix",
- "serde",
- "serde_json",
- "tap",
- "tempfile",
- "test-log",
- "tracing",
- "typed-path",
- "ulid",
-]
-
-[[package]]
-name = "proton-wrapper-shell"
-version = "0.17.0"
-dependencies = [
- "anyhow",
- "clap",
- "gag",
- "proton-wrapper",
- "tap",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -5487,6 +5454,39 @@ name = "windows_x86_64_msvc"
 version = "0.53.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
+
+[[package]]
+name = "wine-wrapper"
+version = "0.17.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bytemuck",
+ "extension-traits",
+ "itertools 0.13.0",
+ "nix",
+ "serde",
+ "serde_json",
+ "tap",
+ "tempfile",
+ "test-log",
+ "tracing",
+ "typed-path",
+ "ulid",
+]
+
+[[package]]
+name = "wine-wrapper-shell"
+version = "0.17.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gag",
+ "tap",
+ "tracing",
+ "tracing-subscriber",
+ "wine-wrapper",
+]
 
 [[package]]
 name = "winnow"
