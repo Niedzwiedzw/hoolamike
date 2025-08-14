@@ -55,10 +55,12 @@
                 # xdelta3 bindings
                 llvmPackages_latest.libclang.lib
 
-                # cross-compilation to windows
-                pkgs.pkgsCross.mingwW64.buildPackages.gcc
-                pkgs.pkgsCross.mingwW64.windows.mingw_w64_pthreads
-                pkgs.pkgsCross.mingwW64.windows.pthreads
+                # == cross-compilation to windows ==
+                # (keeping this commented out as it messes up with unrar-rs on linux :D)
+                # pkgs.pkgsCross.mingwW64.buildPackages.gcc
+                # pkgs.pkgsCross.mingwW64.windows.mingw_w64_pthreads
+                # pkgs.pkgsCross.mingwW64.windows.pthreads
+
                 (rust-bin
                   .selectLatestNightlyWith (toolchain:
                   toolchain

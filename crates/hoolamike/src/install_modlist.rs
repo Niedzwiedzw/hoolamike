@@ -70,7 +70,7 @@ fn setup_texconv_wine(at: &Path, texconv_wine::ExtensionConfig { wine_path, texc
             anyhow::Ok(TexconvWineState {
                 texconv_path: texconv_path.pipe_deref(canonicalize)?,
                 wine_prefix_state: wine_wrapper::wine_context::WineContext {
-                    wine_path: wine_path.pipe_deref(canonicalize)?,
+                    wine_path,
                     show_gui: false,
                     prefix_dir: tempfile::Builder::new()
                         .prefix("pfx-")
