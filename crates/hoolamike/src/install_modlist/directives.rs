@@ -90,7 +90,7 @@ pub fn concurrency() -> usize {
     {
         use std::ops::Div;
 
-        num_cpus::get().div(2).saturating_sub(1).max(1)
+        num_cpus::get()
     }
     #[cfg(debug_assertions)]
     {
