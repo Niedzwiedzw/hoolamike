@@ -16,8 +16,7 @@ use {
     typed_path::{Utf8UnixPath, Utf8WindowsPath, Utf8WindowsPathBuf},
 };
 
-// static WINE_WRAPPER_SHELL: WineWrapperShellBin = WineWrapperShellBin(include_bytes!("../wine-wrapper-shell.exe"));
-static WINE_WRAPPER_SHELL: WineWrapperShellBin = WineWrapperShellBin(&[]);
+static WINE_WRAPPER_SHELL: WineWrapperShellBin = WineWrapperShellBin(include_bytes!("../wine-wrapper-shell.exe"));
 
 static SHELL_NAME: &str = "wine-wrapper-shell.exe";
 
