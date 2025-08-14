@@ -35,6 +35,7 @@ pub fn resize_dds<R, W>(
     output: &mut W,
     texconv_binary: &Path,
     proton_context: &Initialized<ProtonContext>,
+    extension: &str,
 ) -> Result<u64>
 where
     R: Read,
@@ -45,7 +46,7 @@ where
         .context("mapping DXGI format to texconv format")
         .and_then(|format_str| {
             input
-                .seek_with_temp_file_blocking_raw(0)
+                .seek_with_temp_file_blocking_raw_with_extension(extension, 0)
                 .context("loading input")
                 .and_then(|(_size, input)| {
                     tempfile::Builder::new()

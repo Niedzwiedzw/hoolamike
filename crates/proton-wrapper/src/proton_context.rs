@@ -163,6 +163,16 @@ impl WrappedCommand {
 const WINE_HIDE_GUI_FLAGS: &str = "msdia80.dll=n";
 
 impl ProtonContext {
+    #[instrument(skip_all)]
+    pub fn wait_wineserver_idle(&self) -> Result<()> {
+        debug!("waiting");
+        std::process::Command::new("wineserver")
+            .arg("-w")
+            .stdout_ok()
+            .map(|_| {
+                debug!("[OK] idle");
+            })
+    }
     pub fn initialize_with_installs(self, installer_paths: &[(impl AsRef<Path>, &[&str])]) -> Result<Initialized<Self>> {
         self.initialize()
             .and_then(|context| {
@@ -182,6 +192,7 @@ impl ProtonContext {
                                             .args(*args)
                                             .wrap_in_proton(&context)
                                             .and_then(|command| command.output_blocking().map(|_| ()))
+                                            .and_then(|_| context.0.wait_wineserver_idle())
                                     })
                                     .with_context(|| format!("installing [{path:?}]"))
                             })

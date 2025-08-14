@@ -60,14 +60,14 @@ impl TransformedTextureHandler {
                     perceptual_hash: _,
                     width,
                 },
-            to,
+            to: to_path,
             archive_hash_path,
         }: TransformedTextureDirective,
         preheated: Arc<PreheatedArchiveHashPaths>,
     ) -> Result<u64> {
         let handle = tracing::Span::current();
         // let _image_dds_format = supported_image_format(format).context("checking for format support")?;
-        let output_path = self.output_directory.join(to.into_path());
+        let output_path = self.output_directory.join(to_path.clone().into_path());
         let source_file = self
             .download_summary
             .resolve_archive_path(&archive_hash_path)
@@ -100,6 +100,7 @@ impl TransformedTextureHandler {
                                                     &mut writer,
                                                     texconv_path,
                                                     proton_prefix_state.as_ref(),
+                                                    to_path.clone().into_path().extension().with_context(|| format!("no extension on [{to_path}]")).map(|e| e.to_string_lossy())?.as_ref()
                                                 )
                                                 .with_context(|| format!("tried because:\n{reason:?}"))
                                             },

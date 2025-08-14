@@ -344,6 +344,36 @@ where
                 })
             })
     }
+    fn seek_with_temp_file_blocking_raw_with_extension(mut self, extension: &str, expected_size: u64) -> Result<(u64, tempfile::TempPath)> {
+        let _span = tracing::info_span!("seek_with_temp_file_blocking_raw_with_extension").entered();
+        tempfile::Builder::new()
+            .prefix("seeked-file-")
+            .suffix(&format!(".{extension}"))
+            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+            .context("creating a tempfile")
+            .and_then(|mut temp_file| {
+                {
+                    let writer = &mut info_span!("writing_file").wrap_write(expected_size, &mut temp_file);
+                    std::io::copy(&mut self, writer)
+                }
+                .context("creating a seekable temp file")
+                .map(|wrote_size| {
+                    wrote_size
+                        .eq(&expected_size)
+                        .then_some(wrote_size)
+                        .with_context(|| format!("error when writing temp file: expected [{expected_size}], found [{wrote_size}]"))
+                        .tap_err(|bad_size| tracing::debug!(?bad_size))
+                        .pipe(|_| wrote_size)
+                })
+                .map(|wrote_size| (wrote_size, temp_file))
+                .and_then(|(wrote_size, mut file)| {
+                    file.flush()
+                        .context("flushing file")
+                        .map(|_| file.into_temp_path())
+                        .map(|path| (wrote_size, path))
+                })
+            })
+    }
 
     fn seek_with_temp_file_blocking_unbounded(self, expected_size: u64, _computation_permit: OwnedSemaphorePermit) -> Result<(u64, tempfile::TempPath)> {
         let _span = tracing::info_span!("seek_with_temp_file_blocking_unbounded").entered();
