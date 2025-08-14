@@ -78,7 +78,7 @@ pub struct FixupConfig {
 #[serde(deny_unknown_fields)]
 pub struct ExtrasConfig {
     pub tale_of_two_wastelands: Option<crate::extensions::tale_of_two_wastelands_installer::ExtensionConfig>,
-    pub texconv_proton: Option<crate::extensions::texconv_proton::ExtensionConfig>,
+    pub texconv_proton: Option<crate::extensions::texconv_wine::ExtensionConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, derivative::Derivative)]

@@ -1,7 +1,7 @@
 // Import the Texconv builder and related enums
 use {
     crate::{compression::SeekWithTempFileExt, consts::TEMP_FILE_DIR, modlist_json::image_format::DXGIFormat},
-    ::proton_wrapper::proton_context::{Initialized, ProtonContext},
+    ::proton_wrapper::proton_context::{Initialized, WineContext},
     ::texconv_wrapper::{BcFlag, FileType, ImageFilter, Texconv},
     anyhow::{Context, Result},
     itertools::Itertools,
@@ -34,7 +34,7 @@ pub fn resize_dds<R, W>(
     target_mipmaps: u32,
     output: &mut W,
     texconv_binary: &Path,
-    proton_context: &Initialized<ProtonContext>,
+    proton_context: &Initialized<WineContext>,
     extension: &str,
 ) -> Result<u64>
 where

@@ -36,19 +36,18 @@ impl ProtonWrapperShellBin {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProtonContext {
-    pub proton_path: PathBuf,
+pub struct WineContext {
+    pub wine_path: PathBuf,
     pub prefix_dir: Arc<TempDir>,
-    pub steam_path: PathBuf,
     pub show_gui: bool,
 }
 
 pub trait CommandWrapInProtonExt {
-    fn wrap_in_proton(&mut self, context: &Initialized<ProtonContext>) -> Result<WrappedCommand>;
+    fn wrap_in_proton(&mut self, context: &Initialized<WineContext>) -> Result<WrappedCommand>;
 }
 
 impl CommandWrapInProtonExt for Command {
-    fn wrap_in_proton(&mut self, context: &Initialized<ProtonContext>) -> Result<WrappedCommand> {
+    fn wrap_in_proton(&mut self, context: &Initialized<WineContext>) -> Result<WrappedCommand> {
         context.wrap(self)
     }
 }
@@ -162,7 +161,7 @@ impl WrappedCommand {
 
 const WINE_HIDE_GUI_FLAGS: &str = "msdia80.dll=n";
 
-impl ProtonContext {
+impl WineContext {
     #[instrument(skip_all)]
     pub fn wait_wineserver_idle(&self) -> Result<()> {
         debug!("waiting");
@@ -207,9 +206,8 @@ impl ProtonContext {
         std::thread::sleep(std::time::Duration::from_millis(1000));
 
         let Self {
-            proton_path: _,
+            wine_path: _,
             prefix_dir,
-            steam_path: _,
             show_gui: _,
         } = &self;
         PROTON_WRAPPER_SHELL
@@ -247,7 +245,7 @@ pub struct WrappedCommand {
     #[allow(dead_code)]
     log_directory: TempDir,
     #[allow(dead_code)]
-    context: ProtonContext,
+    context: WineContext,
     wrapped_command: Command,
     serialized_command: SerializedCommand,
     wrapped_stdio: WrappedStdout<PathBuf>,
@@ -264,12 +262,11 @@ fn make_fifo_pipe(at: PathBuf) -> Result<PathBuf> {
         .map(|_| at)
 }
 
-impl ProtonContext {
+impl WineContext {
     fn wrap_inner(&self, command: &mut Command, ipc: &MoutnedProtonWrapperShell) -> Result<WrappedCommand> {
         let Self {
-            proton_path: _,
+            wine_path: _,
             prefix_dir,
-            steam_path,
             show_gui,
         } = self;
         debug!("wrapping command [{command:?}]");
@@ -310,13 +307,7 @@ impl ProtonContext {
                 true => c,
                 false => c.env("WINEDLLOVERRIDES", WINE_HIDE_GUI_FLAGS),
             })
-            // .arg(wrapped_command)
-            // .envs(command.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))))
-            // .env("PROTON_LOG", "1")
-            // .env("PROTON_LOG_DIR", log_directory.path())
-            .env("STEAM_COMPAT_DATA_PATH", prefix_dir.path())
             .env("WINEPREFIX", prefix_dir.path())
-            .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path)
             .env("SteamGameId", APP_ID);
 
         if let Some(current_dir) = command.get_current_dir() {
@@ -364,13 +355,13 @@ pub fn host_to_pfx_path(path: &Path) -> Result<Utf8WindowsPathBuf> {
         .with_context(|| format!("translating [{path:?}] to a path inside the prefix (assumming [{ROOT}])"))
 }
 
-impl ProtonContext {
+impl WineContext {
     pub fn host_to_pfx_path(&self, path: &Path) -> Result<Utf8WindowsPathBuf> {
         host_to_pfx_path(path)
     }
 }
 
-impl Initialized<ProtonContext> {
+impl Initialized<WineContext> {
     pub fn wrap(&self, command: &mut Command) -> Result<WrappedCommand> {
         self.0.wrap_inner(command, &self.1)
     }
@@ -386,14 +377,13 @@ mod tests {
     #[test_log::test]
     fn test_it_works() -> Result<()> {
         debug!("testing if it works");
-        ProtonContext {
-            proton_path: "/home/niedzwiedz/.local/share/Steam/steamapps/common/Proton - Experimental/proton".into(),
+        WineContext {
+            wine_path: "wine".into(),
             prefix_dir: Arc::new(
                 tempfile::Builder::new()
                     .prefix("pfx-")
                     .tempdir_in(env!("CARGO_MANIFEST_DIR"))?,
             ),
-            steam_path: "/home/niedzwiedz/.local/share/Steam".into(),
             show_gui: false,
         }
         .initialize()

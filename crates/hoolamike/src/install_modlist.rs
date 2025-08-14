@@ -4,7 +4,7 @@ use {
         consts::TEMP_FILE_DIR,
         downloaders::WithArchiveDescriptor,
         error::TotalResult,
-        extensions::texconv_proton,
+        extensions::texconv_wine,
         modlist_json::{Archive, HumanUrl, Modlist},
         progress_bars_v2::io_progress_style,
         tokio_runtime_multi,
@@ -31,11 +31,7 @@ pub mod downloads;
 #[instrument]
 fn setup_texconv_proton(
     at: &Path,
-    texconv_proton::ExtensionConfig {
-        proton_path,
-        steam_path,
-        texconv_path,
-    }: texconv_proton::ExtensionConfig,
+    texconv_wine::ExtensionConfig { wine_path, texconv_path }: texconv_wine::ExtensionConfig,
 ) -> anyhow::Result<TexconvProtonState> {
     #[rustfmt::skip]
     const TEXCONV_DEPS: &[(&str, &str, Option<&str>, &[&str])] = &[
@@ -76,9 +72,8 @@ fn setup_texconv_proton(
             let canonicalize = |path: &Path| std::fs::canonicalize(path).with_context(|| format!("could not canonicalize [{path:?}]"));
             anyhow::Ok(TexconvProtonState {
                 texconv_path: texconv_path.pipe_deref(canonicalize)?,
-                proton_prefix_state: proton_wrapper::proton_context::ProtonContext {
-                    proton_path: proton_path.pipe_deref(canonicalize)?,
-                    steam_path: steam_path.pipe_deref(canonicalize)?,
+                proton_prefix_state: proton_wrapper::proton_context::WineContext {
+                    wine_path: wine_path.pipe_deref(canonicalize)?,
                     show_gui: false,
                     prefix_dir: tempfile::Builder::new()
                         .prefix("pfx-")

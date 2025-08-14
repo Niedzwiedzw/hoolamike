@@ -5,7 +5,7 @@ use {
         progress_bars_v2::IndicatifWrapIoExt,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
-    proton_wrapper::proton_context::{Initialized, ProtonContext},
+    proton_wrapper::proton_context::{Initialized, WineContext},
     std::io::{Read, Write},
     tracing::{ warn},
 };
@@ -13,7 +13,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct TexconvProtonState {
     pub texconv_path: PathBuf,
-    pub proton_prefix_state: Arc<Initialized<ProtonContext>>,
+    pub proton_prefix_state: Arc<Initialized<WineContext>>,
 }
 
 #[derive(Clone, derivative::Derivative)]
