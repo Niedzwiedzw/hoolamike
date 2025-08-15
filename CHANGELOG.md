@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 💼 Other
+
+- *(compression)* Fix paths being too long while keeping some of the context
+
+## [0.18.2] - 2025-08-14
+
 ### 🚀 Features
 
 - *(textured)* Use texconv.exe wrapped in wine for gpu-accellerated texture recompression
