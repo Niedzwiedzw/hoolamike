@@ -2,7 +2,7 @@ use {
     super::{ProcessArchive, *},
     crate::{
         progress_bars_v2::io_progress_style,
-        utils::{AsBase64, MaybeWindowsPath},
+        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
     },
     ::compress_tools::*,
     anyhow::{Context, Result},
@@ -46,9 +46,8 @@ impl ArchiveHandle {
             })
             .and_then(|lookup| {
                 self.0.rewind().context("rewinding file")?;
-                tempfile::Builder::new()
-                    .prefix(&for_path.to_base64())
-                    .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+                for_path
+                    .named_tempfile_with_context()
                     .context("creating temporary file for output")
                     .and_then(|mut temp_file| {
                         {
@@ -124,9 +123,8 @@ impl ProcessArchive for ArchiveHandle {
                                                                 .then_some(entry_path.clone())
                                                                 .with_context(|| format!("unrequested entry: {entry_path:?}"))
                                                                 .and_then(|path| {
-                                                                    let temp_file = tempfile::Builder::new()
-                                                                        .prefix(&entry_path_string.to_base64())
-                                                                        .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+                                                                    let temp_file = path
+                                                                        .named_tempfile_with_context()
                                                                         .context("creating a temp file for output")?;
                                                                     Ok((
                                                                         acc.tap_mut(|acc| acc.push((path, stat.st_size, temp_file))),

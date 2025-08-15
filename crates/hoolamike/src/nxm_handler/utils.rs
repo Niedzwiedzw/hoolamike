@@ -1,4 +1,7 @@
-use tracing::{instrument, trace};
+use {
+    std::{borrow::Cow, path::Path},
+    tracing::{instrument, trace},
+};
 
 /// this task is no longer being polled when the handle goes out of scope
 pub struct AbortOnDrop<T>(pub tokio::task::JoinHandle<T>);

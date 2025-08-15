@@ -5,6 +5,7 @@ use {
     itertools::Itertools,
     serde::{Deserialize, Serialize},
     std::{
+        borrow::Cow,
         convert::identity,
         future::Future,
         path::{Path, PathBuf},
@@ -224,5 +225,44 @@ impl<T: AsRef<[u8]>> AsBase64 for T {
 impl AsBase64 for Path {
     fn to_base64(&self) -> String {
         self.as_os_str().as_encoded_bytes().to_base64()
+    }
+}
+
+#[extension_traits::extension(pub trait PathFileNameOrEmpty)]
+impl Path {
+    fn file_stem_opt(&self) -> Option<Cow<'_, str>> {
+        self.file_name().map(|name| name.to_string_lossy())
+    }
+    fn extension_opt(&self) -> Option<Cow<'_, str>> {
+        self.extension().map(|e| e.to_string_lossy())
+    }
+    fn named_tempfile_with_context(&self) -> anyhow::Result<NamedTempFile> {
+        #[allow(clippy::ptr_arg)]
+        fn cow_str<'c>(cow: &'c Cow<'_, str>) -> &'c str {
+            match cow {
+                Cow::Borrowed(b) => b,
+                Cow::Owned(o) => o.as_str(),
+            }
+        }
+        (
+            self.file_stem_opt().unwrap_or(Cow::Borrowed("unnamed")),
+            self.extension_opt().map(|ext| format!(".{ext}")),
+        )
+            .pipe(|(stem, extension)| {
+                tempfile::Builder::new()
+                    .tap_mut(|b| {
+                        b.prefix(stem.pipe_ref(cow_str));
+                        if let Some(extension) = extension.as_ref() {
+                            b.suffix(extension);
+                        }
+                    })
+                    .tempfile_in(*crate::consts::TEMP_FILE_DIR)
+                    .with_context(|| {
+                        format!(
+                            "creating temp file in {} (prefix: {stem}, suffix: .{extension:?})",
+                            crate::consts::TEMP_FILE_DIR.display()
+                        )
+                    })
+            })
     }
 }

@@ -2,7 +2,7 @@ use {
     super::{ProcessArchive, *},
     crate::{
         progress_bars_v2::count_progress_style,
-        utils::{AsBase64, MaybeWindowsPath},
+        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
     },
     std::{collections::BTreeMap, fs::File, io::BufWriter, path::PathBuf},
     tempfile::NamedTempFile,
@@ -105,10 +105,8 @@ impl ProcessArchive for ZipArchive {
                                 .with_context(|| format!("opening [{file_name}] ({archive_path:#?})"))
                                 .and_then(|mut file| {
                                     file.size().pipe(|expected_size| {
-                                        tempfile::Builder::new()
-                                            .prefix(&file_name.to_base64())
-                                            .tempfile_in(*crate::consts::TEMP_FILE_DIR)
-                                            .context("creating temp file")
+                                        archive_path
+                                            .named_tempfile_with_context()
                                             .and_then(|mut output| {
                                                 #[allow(clippy::let_and_return)]
                                                 {

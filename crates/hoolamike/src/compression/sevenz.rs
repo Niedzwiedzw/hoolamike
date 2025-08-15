@@ -3,7 +3,7 @@ use {
     crate::{
         install_modlist::directives::IteratorTryFlatMapExt,
         progress_bars_v2::count_progress_style,
-        utils::{AsBase64, MaybeWindowsPath},
+        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
     },
     itertools::Itertools,
     sevenz_rust2::{BlockDecoder, Password},
@@ -150,10 +150,8 @@ impl ProcessArchive for SevenZipArchive {
                                     .for_each_entries(&mut |entry, reader| match lookup.remove(&entry.name) {
                                         Some(original_file_path) => entry.size().pipe(|expected_size| {
                                             let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
-                                            tempfile::Builder::new()
-                                                .prefix(&entry.name.to_base64())
-                                                .tempfile_in(*crate::consts::TEMP_FILE_DIR)
-                                                .context("creating temp file")
+                                            original_file_path
+                                                .named_tempfile_with_context()
                                                 .and_then(|mut output_file| {
                                                     #[allow(clippy::let_and_return)]
                                                     {
