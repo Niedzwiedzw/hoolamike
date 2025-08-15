@@ -3,7 +3,7 @@ use {
     crate::{
         install_modlist::directives::IteratorTryFlatMapExt,
         progress_bars_v2::count_progress_style,
-        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
+        utils::{MaybeWindowsPath, PathFileNameOrEmpty},
     },
     itertools::Itertools,
     sevenz_rust2::{BlockDecoder, Password},

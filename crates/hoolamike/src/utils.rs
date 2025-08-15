@@ -212,6 +212,7 @@ pub fn deserialize_json_with_error_location<T: serde::de::DeserializeOwned>(text
         .with_context(|| format!("could not parse as {}", std::any::type_name::<T>()))
 }
 
+#[allow(dead_code)]
 pub trait AsBase64 {
     fn to_base64(&self) -> String;
 }

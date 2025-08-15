@@ -2,7 +2,7 @@ use {
     super::{ProcessArchive, *},
     crate::{
         progress_bars_v2::io_progress_style,
-        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
+        utils::{MaybeWindowsPath, PathFileNameOrEmpty},
     },
     ::compress_tools::*,
     anyhow::{Context, Result},

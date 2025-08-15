@@ -3,7 +3,7 @@ use {
     crate::{
         compression::ArchiveHandleKind,
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty, PathReadWrite, ReadableCatchUnwindExt},
+        utils::{MaybeWindowsPath, PathFileNameOrEmpty, PathReadWrite, ReadableCatchUnwindExt},
     },
     anyhow::{Context, Result},
     ba2::{BStr, ByteSlice, Reader},

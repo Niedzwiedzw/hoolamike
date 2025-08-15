@@ -1,6 +1,6 @@
 use {
     super::{ProcessArchive, *},
-    crate::utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
+    crate::utils::{MaybeWindowsPath, PathFileNameOrEmpty},
     anyhow::{Context, Result},
     itertools::Itertools,
     std::{collections::HashSet, path::PathBuf},

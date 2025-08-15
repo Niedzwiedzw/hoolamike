@@ -2,7 +2,7 @@ use {
     super::{ProcessArchive, *},
     crate::{
         progress_bars_v2::count_progress_style,
-        utils::{AsBase64, MaybeWindowsPath, PathFileNameOrEmpty},
+        utils::{MaybeWindowsPath, PathFileNameOrEmpty},
     },
     std::{collections::BTreeMap, fs::File, io::BufWriter, path::PathBuf},
     tempfile::NamedTempFile,
