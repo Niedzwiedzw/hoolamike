@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### 💼 Other
 
+- *(progress)* Updated the progress bar library to newer version - should eliminate the occasional PoisonError panics
+
+## [0.18.3] - 2025-08-15
+
+### 💼 Other
+
 - *(compression)* Fix paths being too long while keeping some of the context
 
 ## [0.18.2] - 2025-08-14
