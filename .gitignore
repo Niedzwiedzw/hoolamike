@@ -2,3 +2,4 @@
 /playground
 /.direnv
 /crates-io.token
+create-release.sh
