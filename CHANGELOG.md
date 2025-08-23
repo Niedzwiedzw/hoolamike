@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 🚀 Features
+
+- *(gui)* Hoolamike gui ALPHA (config builder for now)
+
+## [0.18.4] - 2025-08-15
+
 ### 💼 Other
 
 - *(progress)* Updated the progress bar library to newer version - should eliminate the occasional PoisonError panics
