@@ -102,6 +102,14 @@ sevenz-rust2 = { version = "0.17", features = [
 texconv-wrapper.workspace = true
 wine-wrapper.workspace = true
 sha2 = "0.10.9"
+
+# gui
+iced = { git = "https://github.com/iced-rs/iced", rev = "d5521f4", features = [
+  "image",
+] }
+# frozen_term = { git = "https://github.com/Rahn-IT/frostbyte_terminal", rev = "3d41bdf", package = "frozen_term" }
+rfd = "0.15.4"
+gag = "1.0.0"
 # tikv-jemallocator = "0.6.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]

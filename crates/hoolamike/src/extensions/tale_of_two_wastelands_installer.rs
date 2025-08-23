@@ -49,11 +49,11 @@ pub mod templating {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionConfig {
-    path_to_ttw_mpi_file: PathBuf,
-    variables: BTreeMap<String, String>,
+    pub path_to_ttw_mpi_file: PathBuf,
+    pub variables: BTreeMap<String, String>,
 }
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Clone)]
 pub struct CliConfig {
     /// will only run assets containing this chunk of text, useful for debugging
     #[arg(long)]

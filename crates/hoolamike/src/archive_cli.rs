@@ -6,13 +6,13 @@ use {
     tracing::info,
 };
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Clone)]
 pub struct ArchiveCliCommand {
     #[command(subcommand)]
     pub command: ArchiveCliCommandInner,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Clone)]
 pub enum ArchiveCliCommandInner {
     List { archive: PathBuf },
     ExtractAll { archive: PathBuf },

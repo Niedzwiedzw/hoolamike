@@ -55,6 +55,10 @@
                 # xdelta3 bindings
                 llvmPackages_latest.libclang.lib
 
+                # iced gui
+                u-config
+                wayland
+                wayland-protocols
                 # == cross-compilation to windows ==
                 # (keeping this commented out as it messes up with unrar-rs on linux :D)
                 # pkgs.pkgsCross.mingwW64.buildPackages.gcc
@@ -76,6 +80,7 @@
 
             shellHook = ''
               export LIBCLANG_PATH=${pkgs.lib.makeLibraryPath [pkgs.llvmPackages_latest.libclang.lib]};
+              export LD_LIBRARY_PATH="${with pkgs; lib.makeLibraryPath [wayland-protocols wayland libxkbcommon libGL]}";
             '';
           };
         }

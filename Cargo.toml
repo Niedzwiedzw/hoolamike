@@ -86,7 +86,7 @@ tempfile = "3.17.1"
 test-log = { version = "0.2.17", default-features = false, features = [
   "trace",
 ] }
-tokio = { version = "1.43.0", features = ["full", "tracing"] }
+tokio = { version = "1", features = ["full", "tracing"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 transpare = { git = "https://github.com/Niedzwiedzw/transpare", version = "0.2.0" }
@@ -125,12 +125,12 @@ similar = "2.7.0"
 snailquote = "0.3.1"
 static_assertions = "1.1.0"
 symphonia = "0.5.4"
-thiserror = "2.0.11"
+thiserror = "2"
 tracing-flame = "0.2.0"
 tracing-indicatif = "0.3.13"
 typed-path = "0.10.0"
 unrar = "0.5.8"
-vorbis_rs = "0.5.5"
+vorbis_rs = "0.5"
 walkdir = "2.5.0"
 which = "7.0.2"
 xdelta = { git = "https://github.com/SonnyX/xdelta-decoder-rust", rev = "4ee8d64a77659267d3e39cd05f61a6ee369492fc" }

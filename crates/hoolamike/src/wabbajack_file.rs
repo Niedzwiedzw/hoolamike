@@ -20,7 +20,7 @@ const MODLIST_JSON_FILENAME: &str = "modlist";
 
 impl WabbajackFile {
     #[tracing::instrument]
-    pub fn load_wabbajack_file(at_path: PathBuf) -> Result<(WabbajackFileHandle, Self)> {
+    pub fn load_modlist_json(at_path: &Path) -> Result<Self> {
         at_path
             .open_file_read()
             .and_then(|(_, file)| crate::compression::compress_tools::ArchiveHandle::new(file))
@@ -43,12 +43,15 @@ impl WabbajackFile {
                         })
                         .with_context(|| format!("reading [{MODLIST_JSON_FILENAME}]"))
                         .map(|modlist| Self {
-                            wabbajack_file_path: at_path.clone(),
+                            wabbajack_file_path: at_path.to_owned(),
                             wabbajack_entries: entries,
                             modlist,
                         })
-                        .and_then(|data| WabbajackFileHandle::from_archive(at_path).map(|archive| (archive, data)))
                 })
             })
+    }
+    #[tracing::instrument]
+    pub fn load_wabbajack_file(at_path: PathBuf) -> Result<(WabbajackFileHandle, Self)> {
+        Self::load_modlist_json(&at_path).and_then(|data| WabbajackFileHandle::from_archive(at_path).map(|archive| (archive, data)))
     }
 }

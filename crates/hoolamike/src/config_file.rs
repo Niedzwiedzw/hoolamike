@@ -21,7 +21,7 @@ pub struct NexusConfig {
 #[derivative(Default)]
 #[serde(deny_unknown_fields)]
 pub struct DownloadersConfig {
-    #[derivative(Default(value = "std::env::current_dir().unwrap().join(\"downloads\")"))]
+    #[derivative(Default(value = "PathBuf::from(\"downloads\")"))]
     pub downloads_directory: PathBuf,
     pub nexus: NexusConfig,
 }
@@ -45,23 +45,14 @@ fn join_default_path(segments: impl IntoIterator<Item = &'static str>) -> PathBu
 pub struct InstallationConfig {
     #[derivative(Default(value = "join_default_path([\"path\",\"to\",\"file.wabbajack\" ])"))]
     pub wabbajack_file_path: PathBuf,
-    #[derivative(Default(value = "std::env::current_dir().unwrap()"))]
+    #[derivative(Default(value = "PathBuf::from(\"installed\")"))]
     pub installation_path: PathBuf,
 }
 
 pub type GamesConfig = IndexMap<GameName, GameConfig>;
 
 fn default_games_config() -> GamesConfig {
-    GamesConfig::new().tap_mut(|games| {
-        games
-            .insert(
-                GameName::new("ExampleGame".into()),
-                GameConfig {
-                    root_directory: join_default_path(["path", "to", "example", "game"]),
-                },
-            )
-            .pipe(|_| ())
-    })
+    GamesConfig::new()
 }
 
 #[serde_with::serde_as]

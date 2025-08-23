@@ -1,6 +1,6 @@
 use {crate::modlist_json::HumanUrl, clap::Args};
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 pub struct HandleNxmCli {
     /// default port to listen to, preferrably set it through env
     /// WARN: it must be the same port for both instances

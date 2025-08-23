@@ -4,7 +4,7 @@
 
 use {
     anyhow::{Context, Result},
-    clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum},
+    clap::{Args, Parser, Subcommand, ValueEnum},
     modlist_data::ModlistSummary,
     modlist_json::{DirectiveKind, HumanUrl},
     num::ToPrimitive,
@@ -15,7 +15,7 @@ use {
 
 pub const BUFFER_SIZE: usize = 1024 * 64;
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[command(version, about, long_about = None)]
 struct Cli {
     /// the hoolamike config file is where you configure your installation - we're linux users, we can't afford windows
@@ -40,7 +40,7 @@ struct Cli {
     nxm_link: Option<HumanUrl>,
 }
 
-#[derive(clap::Args, Default)]
+#[derive(clap::Args, Default, Clone)]
 pub struct DebugHelpers {
     /// skip verification (used mostly for developing the tool)
     #[arg(long)]
@@ -53,18 +53,18 @@ pub struct DebugHelpers {
     contains: Vec<String>,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 enum HoolamikeDebugCommand {
     ReserializeDirectives { modlist_file: PathBuf },
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 struct HoolamikeDebug {
     #[command(subcommand)]
     command: HoolamikeDebugCommand,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 enum Commands {
     /// Spawns the NXM handler process
     /// (or tries to queue up the download in case the link is provided)
@@ -125,6 +125,8 @@ pub(crate) mod wabbajack_file;
 
 /// non-wabbajack extensions will go here
 pub(crate) mod extensions;
+
+pub(crate) mod gui;
 
 pub(crate) mod consts {
     use {once_cell::sync::Lazy, std::path::Path, tap::prelude::*};
@@ -224,13 +226,14 @@ fn setup_logging(logging_mode: LoggingMode) -> Option<impl Drop> {
 }
 
 fn async_main() -> Result<()> {
+    let cli = Cli::parse();
     let Cli {
         command,
         hoolamike_config,
         logging_mode,
         nxm_link_handler_port,
         nxm_link,
-    } = Cli::parse();
+    } = cli.clone();
     let _guard = setup_logging(logging_mode);
     match (command, nxm_link) {
         (Some(command), _) => match command {
@@ -299,9 +302,10 @@ fn async_main() -> Result<()> {
             }
         },
         (None, Some(nxm_link)) => tokio_runtime_single().and_then(|r| r.block_on(nxm_handler::handle_nxm_link(nxm_link_handler_port, nxm_link))),
-        _ => Cli::command()
-            .error(clap::error::ErrorKind::ArgumentConflict, "bad usage")
-            .exit(),
+        (None, None) => crate::gui::run(cli),
+        // _ => Cli::command()
+        //     .error(clap::error::ErrorKind::ArgumentConflict, "bad usage")
+        //     .exit(),
     }
     .with_context(|| {
         format!(
