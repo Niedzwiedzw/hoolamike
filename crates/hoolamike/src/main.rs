@@ -254,9 +254,7 @@ fn async_main() -> Result<()> {
                 .map(|(_, modlist)| ModlistSummary::new(&modlist.modlist))
                 .map(|modlist| modlist.print())
                 .map(|modlist| println!("\n{modlist}")),
-            Commands::PrintDefaultConfig => config_file::HoolamikeConfig::default()
-                .write()
-                .map(|config| println!("{config}")),
+            Commands::PrintDefaultConfig => config_file::HoolamikeConfig::write_default().map(|config| println!("{config}")),
             Commands::Install { debug } => {
                 let (config_path, config) = config_file::HoolamikeConfig::read(&hoolamike_config).context("reading hoolamike config file")?;
                 tracing::info!("found config at [{}]", config_path.display());

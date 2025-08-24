@@ -8,7 +8,7 @@ use {
         path::{Path, PathBuf},
     },
     tap::prelude::*,
-    tracing::{debug, info},
+    tracing::{debug, info, warn},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -80,17 +80,36 @@ pub struct HoolamikeConfig {
     pub installation: InstallationConfig,
     #[derivative(Default(value = "default_games_config()"))]
     pub games: GamesConfig,
-    pub fixup: FixupConfig,
+    pub fixup: Option<FixupConfig>,
     pub extras: Option<ExtrasConfig>,
 }
 
 pub static CONFIG_FILE_NAME: &str = "hoolamike.yaml";
 impl HoolamikeConfig {
-    pub fn write(&self) -> Result<String> {
+    pub fn write_with_gui_message(&self) -> Result<String> {
+        self.pipe_ref(serde_yaml::to_string)
+            .context("serialization failed")
+            .map(|config| {
+                format!(
+                    "\n# {CONFIG_FILE_NAME} file, generated in gui with {} {} on {} \n# edit it according to your needs:\n{config}",
+                    clap::crate_name!(),
+                    clap::crate_version!(),
+                    chrono::Utc::now().to_rfc3339()
+                )
+            })
+    }
+    pub fn write_default() -> Result<String> {
         Self::default()
             .pipe_ref(serde_yaml::to_string)
             .context("serialization failed")
-            .map(|config| format!("\n# default {CONFIG_FILE_NAME} file\n# edit it according to your needs:\n{config}"))
+            .map(|config| {
+                format!(
+                    "\n# default {CONFIG_FILE_NAME} file, generated using CLI interface with {} {} on {} \n# edit it according to your needs:\n{config}",
+                    clap::crate_name!(),
+                    clap::crate_version!(),
+                    chrono::Utc::now().to_rfc3339()
+                )
+            })
     }
     pub fn read(path: &Path) -> Result<(PathBuf, Self)> {
         path.exists()
@@ -104,6 +123,7 @@ impl HoolamikeConfig {
                     .map(|config| (config_path, config))
             })
             .with_context(|| format!("getting [{CONFIG_FILE_NAME}]"))
+            .tap_err(|e| warn!("{e:?}"))
             .tap_ok(|config| {
                 debug!("{config:?}");
             })

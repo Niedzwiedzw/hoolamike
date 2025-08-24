@@ -1,6 +1,7 @@
 use {
     crate::{compression::ProcessArchive, install_modlist::directives::wabbajack_file_handle::WabbajackFileHandle, utils::PathReadWrite},
     anyhow::{Context, Result},
+    serde::Serialize,
     std::{
         io::Read,
         path::{Path, PathBuf},
@@ -8,7 +9,7 @@ use {
     tap::prelude::*,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 #[allow(dead_code)]
 pub struct WabbajackFile {
     pub wabbajack_file_path: PathBuf,

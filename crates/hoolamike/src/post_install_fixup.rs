@@ -230,7 +230,15 @@ fn post_install_fixup_common(config: &HoolamikeConfig) -> Result<()> {
     info!("common");
     Ok(())
         //
-        .and_then(|_| set_resolution::update_resolution(&config.installation.installation_path, config.fixup.game_resolution))
+        .and_then(|_| {
+            config
+                .fixup
+                .as_ref()
+                .map(|crate::config_file::FixupConfig { game_resolution }| {
+                    set_resolution::update_resolution(&config.installation.installation_path, *game_resolution)
+                })
+                .unwrap_or(Ok(()))
+        })
 }
 
 #[instrument]
