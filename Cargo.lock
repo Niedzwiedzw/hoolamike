@@ -2717,6 +2717,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hoola-progress"
+version = "0.19.0"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
 name = "hoolamike"
 version = "0.19.0"
 dependencies = [

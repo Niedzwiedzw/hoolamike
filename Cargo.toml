@@ -8,7 +8,7 @@ members = [
   "crates/wine-wrapper-shell",
   "crates/texconv-wrapper",
   "crates/tokio-cached-future",
-  "crates/wrapped-7zip",
+  "crates/wrapped-7zip", "crates/hoola-progress",
 ]
 default-members = ["crates/hoolamike"]
 
