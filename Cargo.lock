@@ -2720,7 +2720,12 @@ dependencies = [
 name = "hoola-progress"
 version = "0.19.1"
 dependencies = [
+ "extension-traits",
+ "futures-channel",
  "parking_lot",
+ "tap",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
