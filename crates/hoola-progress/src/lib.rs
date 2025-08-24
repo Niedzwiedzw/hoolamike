@@ -1,5 +1,8 @@
 use {
-    crate::progress_span::{ProgressDelta, ProgressState},
+    crate::{
+        progress_span::{ProgressDelta, ProgressState},
+        stream_compat::{UnboundedReceiverStream, UnboundedReceiverStreamExt},
+    },
     hooks::{read::ReadHookExt, write::WriteHookExt, IoHook},
     std::{
         borrow::Cow,
@@ -14,6 +17,7 @@ use {
 static NEXT_SPAN_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub mod hooks;
+pub mod stream_compat;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct SpanId(usize);
@@ -107,17 +111,18 @@ pub struct ProgressMessage {
 struct CommunicatorInner(Arc<Sender>);
 
 impl CommunicatorInner {
-    pub fn new() -> (Receiver, Self) {
+    pub fn new() -> (ReceiverStream, Self) {
         let (tx, rx) = self::channel();
-        (rx, Self(Arc::new(tx)))
+        (rx.into_stream(), Self(Arc::new(tx)))
     }
 }
 
-type Receiver = futures_channel::mpsc::UnboundedReceiver<ProgressMessage>;
-type Sender = futures_channel::mpsc::UnboundedSender<ProgressMessage>;
+type Receiver = futures::channel::mpsc::UnboundedReceiver<ProgressMessage>;
+type ReceiverStream = UnboundedReceiverStream<ProgressMessage>;
+type Sender = futures::channel::mpsc::UnboundedSender<ProgressMessage>;
 
 fn channel() -> (Sender, Receiver) {
-    futures_channel::mpsc::unbounded()
+    futures::channel::mpsc::unbounded()
 }
 
 pub struct ProgressCommunicator {
@@ -194,7 +199,10 @@ pub trait Progress: Sized {
     }
 }
 
-impl Progress for () {
+/// or you can just use [()]
+pub type NullProgress = ();
+
+impl Progress for NullProgress {
     fn send(&self, _update: Update) {}
     fn span_raw(&self, _span: ProgressSpan) -> Self {}
     fn child(&self, _name: impl Into<Cow<'static, str>>) -> Self {}
@@ -214,7 +222,7 @@ impl Progress for ProgressCommunicator {
 }
 
 impl ProgressCommunicator {
-    fn new() -> (Receiver, Self) {
+    fn new() -> (ReceiverStream, Self) {
         let (rx, communicator) = CommunicatorInner::new();
         (
             rx,
@@ -260,7 +268,7 @@ pub struct ProgressSpan {
 }
 
 impl ProgressMap {
-    pub fn new() -> (Self, Receiver, ProgressCommunicator) {
+    pub fn new() -> (Self, ReceiverStream, ProgressCommunicator) {
         let (rx, communicator) = ProgressCommunicator::new();
         (
             Self {

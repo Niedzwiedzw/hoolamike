@@ -2721,7 +2721,8 @@ name = "hoola-progress"
 version = "0.19.1"
 dependencies = [
  "extension-traits",
- "futures-channel",
+ "futures",
+ "futures-util",
  "parking_lot",
  "tap",
  "tokio",

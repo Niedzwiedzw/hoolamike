@@ -14,7 +14,8 @@ tokio = ["dep:tokio"]
 [dependencies]
 tokio = { workspace = true, optional = true }
 extension-traits.workspace = true
-futures-channel = "0.3.31"
 parking_lot.workspace = true
 tap.workspace = true
 tracing.workspace = true
+futures.workspace = true
+futures-util = "0.3.31"
