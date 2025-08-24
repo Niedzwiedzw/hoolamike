@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### 🚀 Features
 
+- *(gui)* Some help messages, allow resize, small layout fixes
+
+### 🐛 Bug Fixes
+
+- *(gui)* Fix file saving
+
+## [0.19.0] - 2025-08-23
+
+### 🚀 Features
+
 - *(gui)* Hoolamike gui ALPHA (config builder for now)
 
 ## [0.18.4] - 2025-08-15
