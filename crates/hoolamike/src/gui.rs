@@ -1,7 +1,7 @@
 use {
     crate::{
         compression::{zip::ZipArchive, ProcessArchive},
-        config_file::{DownloadersConfig, FixupConfig, GameConfig, HoolamikeConfig, InstallationConfig, NexusConfig},
+        config_file::{DownloadersConfig, FixupConfig, GameConfig, HoolamikeConfig, InstallationConfig, NexusConfig, CONFIG_FILE_NAME},
         gui::helpers::{BoldText, MaybeRelativeTo},
         modlist_json::{GameFileSourceState, GameName, Modlist},
         post_install_fixup::common::Resolution,
@@ -987,7 +987,7 @@ impl State {
         }: Cli,
     ) -> (Self, Task<AppMessage>) {
         const DEFAULT_THEME: Theme = Theme::SolarizedDark;
-        HoolamikeConfig::find(&hoolamike_config)
+        HoolamikeConfig::read(&hoolamike_config)
             .context("could not read config, default will be generated")
             .map(|(config_path, config)| {
                 Self {
@@ -1009,13 +1009,13 @@ impl State {
             .unwrap_or_else(|error| {
                 rfd::FileDialog::new()
                     .set_directory(std::env::current_exe().unwrap().parent().unwrap())
-                    .set_file_name("hoolamike.yaml")
-                    .add_filter("Hoolamike config", &["yaml"])
+                    .set_file_name(CONFIG_FILE_NAME)
+                    .add_filter("Hoolamike config", &[CONFIG_FILE_NAME.split_once(".").unwrap().1])
                     .set_title("IGNORE OVERWRITE WARNING, Root installation location (parent for hoolamike.yaml)")
                     .save_file()
                     .unwrap_or_else(|| std::process::exit(1))
                     .pipe(|hoolamike_config| {
-                        let config = HoolamikeConfig::find(&hoolamike_config)
+                        let config = HoolamikeConfig::read(&hoolamike_config)
                             .map(|(_, c)| c)
                             .tap_err(|e| tracing::error!("bad config at [{}]\n{e:?}", hoolamike_config.display()));
                         let is_err = config.is_err();

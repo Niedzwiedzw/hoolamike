@@ -241,7 +241,7 @@ fn async_main() -> Result<()> {
                 .context("applying patch")
                 .tap_ok(|_| info!("[🩹] Fallout New Vegas 4GB Patch is applied (no need to run FNVPatch.exe or anything like that)")),
             Commands::PostInstallFixup => {
-                let (_config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
+                let (_config_path, config) = config_file::HoolamikeConfig::read(&hoolamike_config).context("reading hoolamike config file")?;
                 post_install_fixup::run_post_install_fixup(&config)
             }
             #[cfg(debug_assertions)]
@@ -258,7 +258,7 @@ fn async_main() -> Result<()> {
                 .write()
                 .map(|config| println!("{config}")),
             Commands::Install { debug } => {
-                let (config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
+                let (config_path, config) = config_file::HoolamikeConfig::read(&hoolamike_config).context("reading hoolamike config file")?;
                 tracing::info!("found config at [{}]", config_path.display());
 
                 install_modlist::install_modlist(config, debug)
@@ -289,11 +289,11 @@ fn async_main() -> Result<()> {
                 .command
                 .pipe(|c| c.clone().run().with_context(|| format!("running\n{c:#?}"))),
             Commands::TaleOfTwoWastelands(cli_config) => {
-                let (_config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
+                let (_config_path, config) = config_file::HoolamikeConfig::read(&hoolamike_config).context("reading hoolamike config file")?;
                 crate::extensions::tale_of_two_wastelands_installer::install(cli_config, config)
             }
             Commands::HandleNxm(handle_nxm_cli) => {
-                let (_config_path, config) = config_file::HoolamikeConfig::find(&hoolamike_config).context("reading hoolamike config file")?;
+                let (_config_path, config) = config_file::HoolamikeConfig::read(&hoolamike_config).context("reading hoolamike config file")?;
                 tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()

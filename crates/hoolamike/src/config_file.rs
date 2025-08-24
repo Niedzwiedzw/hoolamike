@@ -92,7 +92,7 @@ impl HoolamikeConfig {
             .context("serialization failed")
             .map(|config| format!("\n# default {CONFIG_FILE_NAME} file\n# edit it according to your needs:\n{config}"))
     }
-    pub fn find(path: &Path) -> Result<(PathBuf, Self)> {
+    pub fn read(path: &Path) -> Result<(PathBuf, Self)> {
         path.exists()
             .then(|| path.to_owned())
             .with_context(|| format!("config path [{}] does not exist", path.display()))
