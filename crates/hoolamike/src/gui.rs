@@ -9,11 +9,12 @@ use {
         Cli,
     },
     anyhow::{Context, Result},
+    clipboard_rs::Clipboard,
     futures::{FutureExt, TryFutureExt},
     iced::{
         alignment::{Horizontal, Vertical},
         border,
-        widget::{button, center_x, checkbox, container, image::Handle as ImageHandle, scrollable, text, text_input, Column, Row, Stack},
+        widget::{button, center_x, checkbox, container, image::Handle as ImageHandle, scrollable, text, text_input, tooltip, Column, Row, Stack},
         Alignment,
         Color,
         Element,
@@ -392,6 +393,7 @@ impl State {
                         }
 
                         fn table_entry_alignment<'a, Message>(
+                            tooltip_content: String,
                             title: String,
                             middle: impl Into<Element<'a, Message>>,
                             last: impl Into<Element<'a, Message>>,
@@ -403,6 +405,15 @@ impl State {
                                 text(title)
                                     .bold()
                                     .width(Length::Fixed(" wabbajack file path ".len() as f32 * FONT_SIZE))
+                                    .pipe(move |el| {
+                                        tooltip(
+                                            el,
+                                            container(text(tooltip_content))
+                                                .padding(10)
+                                                .style(container::rounded_box),
+                                            tooltip::Position::Bottom,
+                                        )
+                                    })
                                     .conv::<Element<_, _, _>>(),
                                 // TODO: add manual edit with validation
                                 container(middle)
@@ -425,28 +436,30 @@ impl State {
                                 .align_x(Horizontal::Center)
                                 .into()
                         }
-                        fn path_entry<'a>(name: &str, current: &Path, mode: PromptMode) -> Element<'a, Option<PathBuf>> {
+                        fn path_entry<'a>(tooltip_content: &str, name: &str, current: &Path, mode: PromptMode) -> Element<'a, Option<PathBuf>> {
                             let name = name.to_string();
                             button(text("Browse..."))
                                 .on_press_with({
                                     cloned![name];
                                     let current = current.to_owned();
                                     move || {
-                                        fn first_sane_path(p: &Path) -> PathBuf {
+                                        fn first_sane_path(p: &Path) -> Option<PathBuf> {
                                             p.normalize().pipe(|p| {
-                                                std::iter::successors(Some(p.clone()), |p| p.parent().map(|p| p.to_owned()))
-                                                    .find_map(|p| p.canonicalize().ok())
-                                                    .unwrap_or(p)
+                                                std::iter::successors(Some(p.clone()), |p| p.parent().map(|p| p.to_owned())).find_map(|p| p.canonicalize().ok())
                                             })
                                         }
 
                                         rfd::FileDialog::new()
                                             .pipe(|dialog| match mode {
                                                 PromptMode::File => match current.parent() {
-                                                    Some(parent) => dialog.set_directory(first_sane_path(parent)),
+                                                    Some(parent) => {
+                                                        dialog.set_directory(first_sane_path(parent).unwrap_or_else(|| std::env::current_dir().unwrap()))
+                                                    }
                                                     None => dialog.set_directory(std::env::current_dir().expect("to have cwd")),
                                                 },
-                                                PromptMode::Directory => dialog.set_directory(first_sane_path(&current)),
+                                                PromptMode::Directory => {
+                                                    dialog.set_directory(first_sane_path(&current).unwrap_or_else(|| std::env::current_dir().unwrap()))
+                                                }
                                             })
                                             .set_title(name.clone())
                                             .pipe(|d| match mode {
@@ -455,15 +468,23 @@ impl State {
                                             })
                                     }
                                 })
-                                .pipe(move |button| table_entry_alignment(name.to_string(), text(current.display().to_string()), button))
+                                .pipe(move |button| {
+                                    table_entry_alignment(tooltip_content.to_string(), name.to_string(), text(current.display().to_string()), button)
+                                })
                         }
 
-                        fn text_input_entry<'a>(placeholder: &str, name: &str, current: &str) -> Element<'a, String> {
-                            table_entry_alignment(name.to_string(), text_input(placeholder, current).on_input(identity), text(""))
-                        }
-
-                        fn text_input_entry_password<'a>(placeholder: &str, name: &str, current: &str) -> Element<'a, String> {
+                        fn text_input_entry<'a>(tooltip_content: &str, placeholder: &str, name: &str, current: &str) -> Element<'a, String> {
                             table_entry_alignment(
+                                tooltip_content.into(),
+                                name.to_string(),
+                                text_input(placeholder, current).on_input(identity),
+                                text(""),
+                            )
+                        }
+
+                        fn text_input_entry_password<'a>(tooltip_content: &str, placeholder: &str, name: &str, current: &str) -> Element<'a, String> {
+                            table_entry_alignment(
+                                tooltip_content.into(),
                                 name.to_string(),
                                 text_input(placeholder, current)
                                     .secure(true)
@@ -483,43 +504,61 @@ impl State {
                                     // INSTALLATION
                                     .chain([
                                         section("installation"),
-                                        path_entry("wabbajack file path", wabbajack_file_path, PromptMode::File).map({
+                                        path_entry(
+                                            "Path to the .wabbajack file, you probably wanna place it in root directory",
+                                            "wabbajack file path",
+                                            wabbajack_file_path,
+                                            PromptMode::File,
+                                        )
+                                        .map({
                                             cloned![project_root];
                                             move |p| {
                                                 p.map(|p| p.maybe_relative_to_exists(&project_root))
                                                     .map(Message::SelectWabbajackFile)
                                             }
                                         }),
-                                        path_entry("installation path", installation_path, PromptMode::Directory)
-                                            .map({
-                                                cloned![config];
-                                                move |p| {
-                                                    p.map(|p| {
-                                                        config
-                                                            .clone()
-                                                            .tap_mut(|c| c.installation.installation_path = p.maybe_relative_to(&project_root))
-                                                    })
-                                                }
-                                            })
-                                            .map(non_fallible),
+                                        path_entry(
+                                            "Installation path - this is where .wabbajack files will be extracted. Default is fine.",
+                                            "installation path",
+                                            installation_path,
+                                            PromptMode::Directory,
+                                        )
+                                        .map({
+                                            cloned![config];
+                                            move |p| {
+                                                p.map(|p| {
+                                                    config
+                                                        .clone()
+                                                        .tap_mut(|c| c.installation.installation_path = p.maybe_relative_to(&project_root))
+                                                })
+                                            }
+                                        })
+                                        .map(non_fallible),
                                     ])
                                     // DOWNLOADS
                                     .chain([
                                         section("downloads"),
-                                        path_entry("downloads directory", downloads_directory, PromptMode::Directory)
-                                            .map({
-                                                cloned![config];
-                                                move |p| {
-                                                    p.map(|p| {
-                                                        config
-                                                            .clone()
-                                                            .tap_mut(|c| c.downloaders.downloads_directory = p.maybe_relative_to(&project_root))
-                                                    })
-                                                }
-                                            })
-                                            .map(non_fallible),
+                                        path_entry(
+                                            "Downloads from Nexus and also copied game assets will be put here.",
+                                            "downloads directory",
+                                            downloads_directory,
+                                            PromptMode::Directory,
+                                        )
+                                        .map({
+                                            cloned![config];
+                                            move |p| {
+                                                p.map(|p| {
+                                                    config
+                                                        .clone()
+                                                        .tap_mut(|c| c.downloaders.downloads_directory = p.maybe_relative_to(&project_root))
+                                                })
+                                            }
+                                        })
+                                        .map(non_fallible),
                                         text_input_entry_password(
-                                            "<optional, you can also use `hoolamike handle-nxm --help`>",
+                                            "Your Nexus api key for premium downloads.  You can also use nxm handler for non-premium accounts - read \
+                                             `hoolamike handle-nxm --help` for details",
+                                            "<optional>",
                                             "nexus api key",
                                             &api_key.clone().unwrap_or_default(),
                                         )
@@ -541,18 +580,23 @@ impl State {
                                         games
                                             .iter()
                                             .map(|(game_name, GameConfig { root_directory })| {
-                                                path_entry(&game_name.to_string(), root_directory, PromptMode::Directory)
-                                                    .map({
-                                                        cloned![config];
-                                                        move |p| {
-                                                            p.map(|p| {
-                                                                config
-                                                                    .clone()
-                                                                    .tap_mut(|c| c.games[game_name].root_directory = p)
-                                                            })
-                                                        }
-                                                    })
-                                                    .map(non_fallible)
+                                                path_entry(
+                                                    &format!("Game directory for {game_name}."),
+                                                    &game_name.to_string(),
+                                                    root_directory,
+                                                    PromptMode::Directory,
+                                                )
+                                                .map({
+                                                    cloned![config];
+                                                    move |p| {
+                                                        p.map(|p| {
+                                                            config
+                                                                .clone()
+                                                                .tap_mut(|c| c.games[game_name].root_directory = p)
+                                                        })
+                                                    }
+                                                })
+                                                .map(non_fallible)
                                             }),
                                     )
                                     // GAME DIRECTORIES
@@ -562,53 +606,63 @@ impl State {
                                             .iter()
                                             .filter(|r| games.contains_key(*r).not())
                                             .map(|game_name| {
-                                                path_entry(&game_name.to_string(), Path::new("FIXME"), PromptMode::Directory)
-                                                    .map({
-                                                        cloned![config];
-                                                        move |p| {
-                                                            p.map(|p| {
-                                                                config.clone().tap_mut(|c| {
-                                                                    c.games
-                                                                        .insert(game_name.clone(), GameConfig { root_directory: p });
-                                                                })
+                                                path_entry(
+                                                    &format!("You still have to set up game directory for {game_name}."),
+                                                    &game_name.to_string(),
+                                                    Path::new("FIXME"),
+                                                    PromptMode::Directory,
+                                                )
+                                                .map({
+                                                    cloned![config];
+                                                    move |p| {
+                                                        p.map(|p| {
+                                                            config.clone().tap_mut(|c| {
+                                                                c.games
+                                                                    .insert(game_name.clone(), GameConfig { root_directory: p });
                                                             })
-                                                        }
-                                                    })
-                                                    .map(non_fallible)
-                                                    .pipe(|entry| {
-                                                        container(entry)
-                                                            .style(|theme| {
-                                                                iced::widget::container::Style::default()
-                                                                    .border(border::color(theme.extended_palette().warning.strong.color).width(4))
-                                                            })
-                                                            .padding(10)
-                                                            .conv::<Element<_>>()
-                                                    })
+                                                        })
+                                                    }
+                                                })
+                                                .map(non_fallible)
+                                                .pipe(|entry| {
+                                                    container(entry)
+                                                        .style(|theme| {
+                                                            iced::widget::container::Style::default()
+                                                                .border(border::color(theme.extended_palette().warning.strong.color).width(4))
+                                                        })
+                                                        .padding(10)
+                                                        .conv::<Element<_>>()
+                                                })
                                             }),
                                     )
                                     .chain(
                                         // FIXUP
                                         empty().chain(section("fixup").pipe(once)).chain(
-                                            text_input_entry("game resolution", "game resolution", game_resolution.to_string().as_str())
-                                                .map({
-                                                    cloned![config];
-                                                    move |resolution| {
-                                                        resolution
-                                                            .parse::<Resolution>()
-                                                            .context("bad resolution value")
-                                                            .map({
-                                                                cloned![config];
-                                                                move |resolution: Resolution| {
-                                                                    config.clone().tap_mut(|c| {
-                                                                        c.fixup.game_resolution = resolution;
-                                                                    })
-                                                                }
-                                                            })
-                                                            .pipe(Message::TryUpdateConfig)
-                                                            .pipe(Some)
-                                                    }
-                                                })
-                                                .pipe(once),
+                                            text_input_entry(
+                                                "Game resolution which will be automatically applied for Bethesda games. Format is '1280x800'",
+                                                "game resolution",
+                                                "game resolution",
+                                                game_resolution.to_string().as_str(),
+                                            )
+                                            .map({
+                                                cloned![config];
+                                                move |resolution| {
+                                                    resolution
+                                                        .parse::<Resolution>()
+                                                        .context("bad resolution value")
+                                                        .map({
+                                                            cloned![config];
+                                                            move |resolution: Resolution| {
+                                                                config.clone().tap_mut(|c| {
+                                                                    c.fixup.game_resolution = resolution;
+                                                                })
+                                                            }
+                                                        })
+                                                        .pipe(Message::TryUpdateConfig)
+                                                        .pipe(Some)
+                                                }
+                                            })
+                                            .pipe(once),
                                         ),
                                     )
                                     .chain(
@@ -646,43 +700,53 @@ impl State {
                                                                     .pipe(|ExtensionConfig { wine_path, texconv_path }| {
                                                                         empty()
                                                                             .chain(
-                                                                                path_entry("path to wine binary", &wine_path, PromptMode::File)
-                                                                                    .map({
-                                                                                        cloned![config];
-                                                                                        move |p| {
-                                                                                            p.map(|p| {
-                                                                                                config.clone().tap_mut(|c| {
-                                                                                                    c.extras
-                                                                                                        .get_or_insert_with(texconv::default_extras)
-                                                                                                        .texconv_wine
-                                                                                                        .get_or_insert_with(texconv::default_extension_config)
-                                                                                                        .wine_path = p
-                                                                                                })
+                                                                                path_entry(
+                                                                                    "Path to the wine binary, you can probably leave it as the default value \
+                                                                                     ('wine')",
+                                                                                    "path to wine binary",
+                                                                                    &wine_path,
+                                                                                    PromptMode::File,
+                                                                                )
+                                                                                .map({
+                                                                                    cloned![config];
+                                                                                    move |p| {
+                                                                                        p.map(|p| {
+                                                                                            config.clone().tap_mut(|c| {
+                                                                                                c.extras
+                                                                                                    .get_or_insert_with(texconv::default_extras)
+                                                                                                    .texconv_wine
+                                                                                                    .get_or_insert_with(texconv::default_extension_config)
+                                                                                                    .wine_path = p
                                                                                             })
-                                                                                        }
-                                                                                    })
-                                                                                    .map(non_fallible)
-                                                                                    .pipe(once),
+                                                                                        })
+                                                                                    }
+                                                                                })
+                                                                                .map(non_fallible)
+                                                                                .pipe(once),
                                                                             )
                                                                             .chain(
-                                                                                path_entry("path to texconv.exe", &texconv_path, PromptMode::File)
-                                                                                    .map({
-                                                                                        cloned![config];
-                                                                                        move |p| {
-                                                                                            p.map(|p| {
-                                                                                                config.clone().tap_mut(|c| {
-                                                                                                    c.extras
-                                                                                                        .get_or_insert_with(texconv::default_extras)
-                                                                                                        .texconv_wine
-                                                                                                        .get_or_insert_with(texconv::default_extension_config)
-                                                                                                        .texconv_path =
-                                                                                                        p.maybe_relative_to_exists(&project_root)
-                                                                                                })
+                                                                                path_entry(
+                                                                                    "Path to texconv.exe, you should download it from official source",
+                                                                                    " path to texconv.exe",
+                                                                                    &texconv_path,
+                                                                                    PromptMode::File,
+                                                                                )
+                                                                                .map({
+                                                                                    cloned![config];
+                                                                                    move |p| {
+                                                                                        p.map(|p| {
+                                                                                            config.clone().tap_mut(|c| {
+                                                                                                c.extras
+                                                                                                    .get_or_insert_with(texconv::default_extras)
+                                                                                                    .texconv_wine
+                                                                                                    .get_or_insert_with(texconv::default_extension_config)
+                                                                                                    .texconv_path = p.maybe_relative_to_exists(&project_root)
                                                                                             })
-                                                                                        }
-                                                                                    })
-                                                                                    .map(non_fallible)
-                                                                                    .pipe(once),
+                                                                                        })
+                                                                                    }
+                                                                                })
+                                                                                .map(non_fallible)
+                                                                                .pipe(once),
                                                                             )
                                                                             .collect_vec()
                                                                     })
@@ -731,43 +795,56 @@ impl State {
                                                                          }| {
                                                                             empty()
                                                                                 .chain(
-                                                                                    path_entry("TTW MPI file", &path_to_ttw_mpi_file, PromptMode::File)
-                                                                                        .map({
-                                                                                            cloned![config];
-                                                                                            move |p| {
-                                                                                                p.map(|p| {
-                                                                                                    config.clone().tap_mut(|c| {
-                                                                                                        c.extras
-                                                                                                            .get_or_insert_with(ttw::default_extras)
-                                                                                                            .tale_of_two_wastelands
-                                                                                                            .get_or_insert_with(ttw::default_extension_config)
-                                                                                                            .path_to_ttw_mpi_file =
-                                                                                                            p.maybe_relative_to_exists(&project_root)
-                                                                                                    })
+                                                                                    path_entry(
+                                                                                        "Path to Tale of Two Wastelands installer (.MPI file)",
+                                                                                        "TTW MPI file",
+                                                                                        &path_to_ttw_mpi_file,
+                                                                                        PromptMode::File,
+                                                                                    )
+                                                                                    .map({
+                                                                                        cloned![config];
+                                                                                        move |p| {
+                                                                                            p.map(|p| {
+                                                                                                config.clone().tap_mut(|c| {
+                                                                                                    c.extras
+                                                                                                        .get_or_insert_with(ttw::default_extras)
+                                                                                                        .tale_of_two_wastelands
+                                                                                                        .get_or_insert_with(ttw::default_extension_config)
+                                                                                                        .path_to_ttw_mpi_file =
+                                                                                                        p.maybe_relative_to_exists(&project_root)
                                                                                                 })
-                                                                                            }
-                                                                                        })
-                                                                                        .map(non_fallible)
-                                                                                        .pipe(once),
+                                                                                            })
+                                                                                        }
+                                                                                    })
+                                                                                    .map(non_fallible)
+                                                                                    .pipe(once),
                                                                                 )
                                                                                 .chain(variables.clone().into_iter().map(|(name, value)| {
-                                                                                    path_entry(&name, Path::new(value.as_str()), PromptMode::Directory)
-                                                                                        .map({
-                                                                                            cloned![config];
-                                                                                            move |p| {
-                                                                                                p.map(|p| {
-                                                                                                    config.clone().tap_mut(|c| {
-                                                                                                        c.extras
-                                                                                                            .get_or_insert_with(ttw::default_extras)
-                                                                                                            .tale_of_two_wastelands
-                                                                                                            .get_or_insert_with(ttw::default_extension_config)
-                                                                                                            .variables
-                                                                                                            .insert(name.clone(), p.display().to_string());
-                                                                                                    })
+                                                                                    path_entry(
+                                                                                        &format!(
+                                                                                            "'{name}' is a required parameter for the installer, consult \
+                                                                                             installation guide to see what should the value be"
+                                                                                        ),
+                                                                                        &name,
+                                                                                        Path::new(value.as_str()),
+                                                                                        PromptMode::Directory,
+                                                                                    )
+                                                                                    .map({
+                                                                                        cloned![config];
+                                                                                        move |p| {
+                                                                                            p.map(|p| {
+                                                                                                config.clone().tap_mut(|c| {
+                                                                                                    c.extras
+                                                                                                        .get_or_insert_with(ttw::default_extras)
+                                                                                                        .tale_of_two_wastelands
+                                                                                                        .get_or_insert_with(ttw::default_extension_config)
+                                                                                                        .variables
+                                                                                                        .insert(name.clone(), p.display().to_string());
                                                                                                 })
-                                                                                            }
-                                                                                        })
-                                                                                        .map(non_fallible)
+                                                                                            })
+                                                                                        }
+                                                                                    })
+                                                                                    .map(non_fallible)
                                                                                 }))
                                                                                 .collect_vec()
                                                                         },
@@ -784,7 +861,24 @@ impl State {
                                             text_input("", output_command)
                                                 .width(Length::Fill)
                                                 .conv::<Element<_>>(),
-                                            button("paste into terminal").conv::<Element<()>>(),
+                                            button("COPY COMMAND")
+                                                .on_press_with(|| {
+                                                    clipboard_rs::ClipboardContext::new()
+                                                        .map_err(|e| anyhow::anyhow!("{e:?}"))
+                                                        .context("instantiating clipboard")
+                                                        .and_then(|clipboard| {
+                                                            clipboard
+                                                                .set_text(output_command.clone())
+                                                                .map_err(|e| anyhow::anyhow!("{e:?}"))
+                                                                .context("copying to clipboard")
+                                                        })
+                                                        .pipe(|res| {
+                                                            if let Err(e) = res {
+                                                                tracing::error!("could not copy to clipboard:\n{e:?}")
+                                                            }
+                                                        })
+                                                })
+                                                .conv::<Element<()>>(),
                                         ])
                                         .spacing(20)
                                         .padding(20)
@@ -832,11 +926,12 @@ impl State {
                         )
                         .into(),
                     scrollable(config_editor)
-                        .height(Length::Fixed(APP_SIZE.1 / 4. * 3.))
+                        .height(Length::FillPortion(3))
                         .conv::<Element<_, _, _>>(),
                     scrollable(center_x(
                         text(error.as_ref().map(|e| format!("{e:?}")).unwrap_or_default()).color(Color::from_rgb(1., 0.5, 0.)),
                     ))
+                    .height(Length::FillPortion(1))
                     .conv(),
                 ])
                 .spacing(10);
@@ -876,6 +971,7 @@ impl State {
                             .pipe(once),
                         ),
                 )
+                .height(Length::Fill)
             },
         )
         .into()
@@ -957,7 +1053,7 @@ pub fn run(cli: Cli) -> Result<()> {
         .theme(|s| s.theme.clone())
         .title(TITLE)
         .window_size(APP_SIZE)
-        .resizable(false)
+        // .resizable(false)
         .run()
         .map_err(|e| anyhow::anyhow!("{e:?}"))
         .context("running gui")
