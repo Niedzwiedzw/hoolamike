@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "bsa-cli"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "ba2",
@@ -2696,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "hoola-audio"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2718,7 +2718,7 @@ dependencies = [
 
 [[package]]
 name = "hoola-progress"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "extension-traits",
  "futures",
@@ -2731,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "hoolamike"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -6501,7 +6501,7 @@ dependencies = [
 
 [[package]]
 name = "texconv-wrapper"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "bon",
@@ -6684,7 +6684,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-cached-future"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -8251,7 +8251,7 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "wine-wrapper"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -8271,7 +8271,7 @@ dependencies = [
 
 [[package]]
 name = "wine-wrapper-shell"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -8397,7 +8397,7 @@ dependencies = [
 
 [[package]]
 name = "wrapped-7zip"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "chrono",

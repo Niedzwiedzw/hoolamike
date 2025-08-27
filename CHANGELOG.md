@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 💼 Other
+
+- *(cdn-downloader)* Wabbajack cdn downloader for non-slow links
+
+## [0.19.1] - 2025-08-24
+
 ### 🚀 Features
 
 - *(gui)* Some help messages, allow resize, small layout fixes
