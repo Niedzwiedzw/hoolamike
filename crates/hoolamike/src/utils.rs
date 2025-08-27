@@ -234,6 +234,18 @@ impl Path {
     fn file_stem_opt(&self) -> Option<Cow<'_, str>> {
         self.file_name().map(|name| name.to_string_lossy())
     }
+
+    fn map_file_stem<F: FnOnce(&str) -> String>(&self, map: F) -> Option<PathBuf> {
+        self.file_stem()
+            .map(|p| p.to_string_lossy())
+            .map(|stem| {
+                map(stem.as_ref()).pipe(|file_stem| match self.extension() {
+                    Some(ext) => format!("{file_stem}.{}", ext.to_string_lossy()),
+                    None => file_stem,
+                })
+            })
+            .map(|filename| self.with_file_name(filename))
+    }
     fn extension_opt(&self) -> Option<Cow<'_, str>> {
         self.extension().map(|e| e.to_string_lossy())
     }

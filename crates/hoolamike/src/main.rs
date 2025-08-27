@@ -66,6 +66,8 @@ struct HoolamikeDebug {
 
 #[derive(Subcommand, Clone)]
 enum Commands {
+    /// Downlaods file from wabbajack CDN - much faster than link marked with "Slow Link (Debug Only)"
+    DownloadWabbajackCdn(download_wabbajack_cdn::CommandArgs),
     /// Spawns the NXM handler process
     /// (or tries to queue up the download in case the link is provided)
     HandleNxm(nxm_handler::cli::HandleNxmCli),
@@ -126,6 +128,7 @@ pub(crate) mod wabbajack_file;
 /// non-wabbajack extensions will go here
 pub(crate) mod extensions;
 
+pub(crate) mod download_wabbajack_cdn;
 pub(crate) mod gui;
 
 pub(crate) mod consts {
@@ -298,8 +301,12 @@ fn async_main() -> Result<()> {
                     .context("cannot create runtime builder")
                     .and_then(|runtime| runtime.block_on(nxm_handler::run(config, handle_nxm_cli)))
             }
+            Commands::DownloadWabbajackCdn(download) => tokio_runtime_multi(num_cpus::get())
+                .and_then(move |runtime| runtime.block_on(download.download()))
+                .map(|output| info!("{}", output.display())),
         },
         (None, Some(nxm_link)) => tokio_runtime_single().and_then(|r| r.block_on(nxm_handler::handle_nxm_link(nxm_link_handler_port, nxm_link))),
+
         (None, None) => crate::gui::run(cli),
         // _ => Cli::command()
         //     .error(clap::error::ErrorKind::ArgumentConflict, "bad usage")

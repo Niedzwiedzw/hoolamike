@@ -24,6 +24,15 @@ use {
     tracing::{debug, instrument, Instrument},
 };
 
+pub static HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> = {
+    std::sync::LazyLock::new(|| {
+        reqwest::ClientBuilder::new()
+            .user_agent(concat!(clap::crate_name!(), "", clap::crate_version!()))
+            .build()
+            .expect("could not construct http client")
+    })
+};
+
 #[derive(Clone)]
 pub struct DownloadersInner {
     pub nexus: Option<Arc<NexusDownloader>>,
@@ -144,8 +153,14 @@ async fn copy_local_file(from: PathBuf, to: PathBuf, expected_size: u64) -> Resu
     }
     Ok(to)
 }
-#[instrument]
+
+#[instrument(skip(from), fields(chunks=%from.len()))]
 pub async fn stream_merge_file(from: Vec<HumanUrl>, to: PathBuf, expected_size: u64) -> Result<PathBuf> {
+    stream_merge_file_validate(from, to, Some(expected_size)).await
+}
+
+#[instrument(level = "DEBUG")]
+pub async fn stream_merge_file_validate(from: Vec<HumanUrl>, to: PathBuf, expected_size: Option<u64>) -> Result<PathBuf> {
     let target_file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -154,10 +169,12 @@ pub async fn stream_merge_file(from: Vec<HumanUrl>, to: PathBuf, expected_size: 
         .map_with_context(|| format!("opening [{}]", to.display()))
         .await?;
 
-    let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size, target_file);
+    let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size.unwrap_or(0), target_file);
     let mut downloaded = 0;
     for from_chunk in from.clone().into_iter() {
-        let mut byte_stream = reqwest::get(from_chunk.to_string())
+        let mut byte_stream = HTTP_CLIENT
+            .get(from_chunk.to_string())
+            .send()
             .await
             .with_context(|| format!("making request to {from_chunk}"))?
             .bytes_stream();
@@ -172,11 +189,14 @@ pub async fn stream_merge_file(from: Vec<HumanUrl>, to: PathBuf, expected_size: 
                 Err(message) => Err(message)?,
             }
         }
+        info!("{from_chunk} finished");
+    }
+    if let Some(expected_size) = expected_size {
+        if downloaded != expected_size {
+            anyhow::bail!("[{from:?}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
+        }
     }
 
-    if downloaded != expected_size {
-        anyhow::bail!("[{from:?}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
-    }
     Ok(to)
 }
 
@@ -195,7 +215,9 @@ pub async fn stream_file_validate(from: HumanUrl, to: PathBuf, expected_size: Op
         .map_with_context(|| format!("opening [{}]", to.display()))
         .await?;
     let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size.unwrap_or(0), tokio::io::BufWriter::new(target_file));
-    let mut byte_stream = reqwest::get(from.to_string())
+    let mut byte_stream = HTTP_CLIENT
+        .get(from.to_string())
+        .send()
         .await
         .with_context(|| format!("making request to {from}"))?
         .bytes_stream();

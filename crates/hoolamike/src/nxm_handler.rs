@@ -6,7 +6,10 @@ use {
             DownloadTask,
             WithArchiveDescriptor,
         },
-        install_modlist::{download_cache::DownloadCache, downloads::stream_file},
+        install_modlist::{
+            download_cache::DownloadCache,
+            downloads::{stream_file, HTTP_CLIENT},
+        },
         modlist_json::{Archive, HumanUrl, Modlist, State},
         progress_bars_v2::io_progress_style,
         utils::{spawn_rayon, Obfuscated},
@@ -33,7 +36,7 @@ pub mod register;
 pub mod utils;
 
 pub async fn handle_nxm_link(port: u16, nxm_link: HumanUrl) -> Result<()> {
-    reqwest::Client::new()
+    HTTP_CLIENT
         .post(single_instance_server::server_address(port).pipe(|address| format!("http://{address}")))
         .json(&single_instance_server::Message::NewNxm(nxm_link))
         .send()

@@ -1,6 +1,6 @@
 use {
     super::helpers::FutureAnyhowExt,
-    crate::modlist_json::HumanUrl,
+    crate::{install_modlist::downloads::HTTP_CLIENT, modlist_json::HumanUrl},
     anyhow::{Context, Result},
     futures::TryFutureExt,
     std::{future::ready, str::FromStr},
@@ -80,7 +80,7 @@ impl GoogleDriveDownloader {
             .context("invalid url")?;
 
         let response = {
-            reqwest::Client::new()
+            HTTP_CLIENT
                 .get(original_url.to_string())
                 .send()
                 .await
