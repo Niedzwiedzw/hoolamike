@@ -409,7 +409,7 @@ impl State {
                     .set_file_name(CONFIG_FILE_NAME)
                     .add_filter("Hoolamike config", &[CONFIG_FILE_NAME.split_once(".").unwrap().1])
                     .set_title("IGNORE OVERWRITE WARNING, Root installation location (parent for hoolamike.yaml)")
-                    .pick_file()
+                    .save_file()
                     .unwrap_or_else(|| std::process::exit(1))
                     .pipe(|hoolamike_config| {
                         let config = HoolamikeConfig::read(&hoolamike_config)
