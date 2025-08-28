@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 🐛 Bug Fixes
+
+- *(gui)* Automatically create hoolamike file if it's missing
+
+## [0.20.0] - 2025-08-27
+
 ### 💼 Other
 
 - *(cdn-downloader)* Wabbajack cdn downloader for non-slow links
