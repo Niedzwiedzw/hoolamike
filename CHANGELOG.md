@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 🚀 Features
+
+- *(archives)* Improve case-insensitive archives support - some lists depend on it VERY heavily for some reason
+
+## [0.20.1] - 2025-08-28
+
 ### 🐛 Bug Fixes
 
 - *(gui)* Automatically create hoolamike file if it's missing
