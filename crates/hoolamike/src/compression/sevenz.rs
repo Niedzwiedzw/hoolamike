@@ -1,15 +1,16 @@
 use {
     super::{ProcessArchive, *},
     crate::{
+        compression::case_insensitive_lookup::CaseInsensitiveArchiveListing,
         install_modlist::directives::IteratorTryFlatMapExt,
         progress_bars_v2::count_progress_style,
-        utils::{MaybeWindowsPath, PathFileNameOrEmpty},
+        utils::PathFileNameOrEmpty,
     },
     itertools::Itertools,
     sevenz_rust2::{BlockDecoder, Password},
     std::{
         borrow::Cow,
-        collections::{BTreeMap, HashMap},
+        collections::BTreeMap,
         fs::File,
         io::{BufWriter, Read},
         ops::Not,
@@ -44,99 +45,66 @@ fn no_password() -> &'static Password {
 }
 
 impl<R: Read + Seek> SevenZipArchiveExt for ::sevenz_rust2::ArchiveReader<R> {
-    fn list_paths_with_originals(&self) -> Vec<(String, PathBuf, Option<usize>)> {
+    fn list_paths_with_originals(&self) -> Result<CaseInsensitiveArchiveListing<usize>> {
         self.archive().list_paths_with_originals()
     }
 }
 
 impl SevenZipArchiveExt for SevenZipArchive {
-    fn list_paths_with_originals(&self) -> Vec<(String, PathBuf, Option<usize>)> {
+    fn list_paths_with_originals(&self) -> Result<CaseInsensitiveArchiveListing<usize>> {
         self.archive.list_paths_with_originals()
     }
 }
 
 #[extension_traits::extension(trait SevenZipArchiveExt)]
 impl ::sevenz_rust2::Archive {
-    fn list_paths_with_originals(&self) -> Vec<(String, PathBuf, Option<usize>)> {
+    fn list_paths_with_originals(&self) -> Result<CaseInsensitiveArchiveListing<usize>> {
         self.files
             .iter()
             .zip(self.stream_map.file_block_index.iter())
             .filter(|(e, _block_index)| e.is_directory.not())
-            .map(|(e, block_index)| (e.name.clone(), MaybeWindowsPath(e.name.clone()).into_path(), *block_index))
-            .collect()
+            .map(|(e, block_index)| {
+                block_index
+                    .with_context(|| format!("no block index for entry {e:#?}"))
+                    .map(|block_index| (e.name.clone(), block_index))
+            })
+            .process_results(|entries| CaseInsensitiveArchiveListing::from_string_paths_extra(entries))
     }
 }
 
 impl ProcessArchive for SevenZipArchive {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
-        self.archive
-            .list_paths_with_originals()
-            .pipe(|paths| paths.into_iter().map(|(_, p, _)| p).collect::<Vec<_>>())
-            .pipe(Ok)
+        self.archive.list_paths_with_originals().map(|paths| {
+            paths
+                .into_iter()
+                .map(|(path, _)| path.as_path())
+                .collect::<Vec<_>>()
+        })
     }
 
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         self.archive
             .list_paths_with_originals()
-            .pipe(|paths| {
-                paths
-                    .into_iter()
-                    .map(|(name, path, block_index)| (path, (name, block_index)))
-                    .collect::<HashMap<_, _>>()
-            })
-            .pipe(|mut name_lookup| {
-                paths
-                    .iter()
-                    .map(|path| {
-                        name_lookup
-                            .remove(*path)
-                            .with_context(|| format!("path [{path:?}] not found in archive:\n{name_lookup:#?}"))
-                            .or_else(|reason| {
-                                name_lookup
-                                    .iter()
-                                    .find_map(|(key, name)| {
-                                        key.to_string_lossy()
-                                            .to_lowercase()
-                                            .eq(&path.to_string_lossy().to_lowercase())
-                                            .then_some(name.clone())
-                                    })
-                                    .context("could not even find a case-insensitive path")
-                                    .with_context(|| format!("tried because:\n{reason:?}"))
-                                    .tap_ok(|name| warn!("found case-insensitive name: [{name:?}]"))
-                            })
-                            .map(|name| ((*path).to_owned(), name))
-                    })
-                    .collect::<Result<Vec<_>>>()
-                    .context("figuring out correct archive paths")
-            })
-            .and_then(|files_to_extract| {
-                let lookup = files_to_extract
-                    .into_iter()
-                    .map(|(k, (v, idx))| (v, (k, idx)))
-                    .collect::<BTreeMap<_, _>>();
+            .and_then(|archive_paths| archive_paths.plan_extract_list(paths))
+            .and_then(|extract_list| {
                 let extracting_files = info_span!("extracting_files").tap(|pb| {
                     pb.pb_set_style(&count_progress_style());
-                    pb.pb_set_length(lookup.len() as _);
+                    pb.pb_set_length(extract_list.len() as _);
                 });
-                lookup
+
+                extract_list
                     .into_iter()
-                    .map(|(k, (v, idx))| {
-                        idx.with_context(|| format!("[{k}] (requested path {v:?}) has no index!"))
-                            .map(|idx| (k, (v, idx)))
-                    })
-                    .collect::<Result<Vec<_>>>()
-                    .and_then(|paths| {
-                        paths
-                            .into_iter()
-                            .sorted_unstable_by_key(|(_, (_, idx))| *idx)
-                            .chunk_by(|(_k, (_v, idx))| *idx)
+                    .pipe(|extract_list| {
+                        extract_list
+                            .sorted_unstable_by_key(|entry| entry.extra_value)
+                            .chunk_by(|entry| entry.extra_value)
                             .into_iter()
                             .map(|(block_idx, chunk)| {
                                 (
                                     block_idx,
                                     chunk
                                         .into_iter()
-                                        .map(|(k, (v, _))| (k, v))
+                                        .map(|e| (e.archive_path.clone(), e))
                                         .collect::<BTreeMap<_, _>>(),
                                 )
                             })
@@ -147,10 +115,14 @@ impl ProcessArchive for SevenZipArchive {
                                 let block = BlockDecoder::new(1, block_idx, &self.archive, no_password(), &mut self.file);
 
                                 block
-                                    .for_each_entries(&mut |entry, reader| match lookup.remove(&entry.name) {
+                                    .for_each_entries(&mut |entry, reader| match lookup
+                                        .remove(&entry.name.clone().into())
+                                        .map(|e| e.requested_path.to_owned())
+                                    {
                                         Some(original_file_path) => entry.size().pipe(|expected_size| {
                                             let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
                                             original_file_path
+                                                .as_ref()
                                                 .named_tempfile_with_context()
                                                 .and_then(|mut output_file| {
                                                     #[allow(clippy::let_and_return)]
@@ -201,7 +173,11 @@ impl ProcessArchive for SevenZipArchive {
                                         )),
                                     })
                             })
-                            .try_flat_map(|v| v.into_iter().map(Ok))
+                            .try_flat_map(|v| {
+                                v.into_iter()
+                                    .map(|(path, handle)| (path.as_path(), handle))
+                                    .map(Ok)
+                            })
                             .collect::<Result<Vec<_>>>()
                     })
                     .context("extracting multiple paths failed")
@@ -213,6 +189,7 @@ impl ProcessArchive for SevenZipArchive {
                 )
             })
     }
+
     fn get_handle(&mut self, path: &Path) -> Result<super::ArchiveFileHandle> {
         self.get_many_handles(&[path])
             .context("getting file handles")
@@ -256,12 +233,12 @@ mod tests {
             SevenZipArchive::new(file)
                 .context("opening archive")
                 .and_then(|mut archive| {
-                    archive.list_paths_with_originals().pipe(|paths| {
+                    archive.list_paths_with_originals().and_then(|paths| {
                         paths
-                            .iter()
-                            .map(|(_, path, _)| path.as_path())
+                            .into_iter()
+                            .map(|(path, _)| path.as_path())
                             .collect::<Vec<_>>()
-                            .pipe(|paths| archive.get_many_handles(&paths))
+                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
                             .map(|extracted| {
                                 extracted
                                     .into_iter()
@@ -280,12 +257,12 @@ mod tests {
             SevenZipArchive::new(file)
                 .context("opening archive")
                 .and_then(|mut archive| {
-                    archive.list_paths_with_originals().pipe(|paths| {
+                    archive.list_paths_with_originals().and_then(|paths| {
                         paths
-                            .iter()
-                            .map(|(_, path, _)| path.as_path())
+                            .into_iter()
+                            .map(|(path, _)| path.as_path())
                             .collect::<Vec<_>>()
-                            .pipe(|paths| archive.get_many_handles(&paths))
+                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
                             .map(|extracted| {
                                 extracted
                                     .into_iter()
@@ -307,13 +284,13 @@ mod tests {
                     SevenZipArchive::new(file)
                         .context("opening archive")
                         .and_then(|mut archive| {
-                            archive.list_paths_with_originals().pipe(|paths| {
+                            archive.list_paths_with_originals().and_then(|paths| {
                                 paths
-                                    .iter()
-                                    .map(|(_, path, _)| path.as_path())
+                                    .into_iter()
+                                    .map(|(path, _)| path.as_path())
                                     .filter(|_| rand::thread_rng().gen::<bool>())
                                     .collect::<Vec<_>>()
-                                    .pipe(|paths| archive.get_many_handles(&paths))
+                                    .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
                                     .map(|extracted| {
                                         extracted
                                             .into_iter()
@@ -341,12 +318,12 @@ mod tests {
                         SevenZipArchive::new(file)
                             .context("opening archive")
                             .and_then(|mut archive| {
-                                archive.list_paths_with_originals().pipe(|paths| {
+                                archive.list_paths_with_originals().and_then(|paths| {
                                     paths
-                                        .iter()
-                                        .map(|(_, path, _)| path.as_path())
+                                        .into_iter()
+                                        .map(|(path, _)| path.as_path())
                                         .collect::<Vec<_>>()
-                                        .pipe(|paths| archive.get_many_handles(&paths))
+                                        .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
                                         .map(|extracted| {
                                             extracted
                                                 .into_iter()

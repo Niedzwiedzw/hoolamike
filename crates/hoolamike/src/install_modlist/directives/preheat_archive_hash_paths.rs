@@ -1,7 +1,7 @@
 use {
     super::queued_archive_task::SourceKind,
     crate::{
-        compression::{ArchiveHandleKind, ProcessArchive, SeekWithTempFileExt},
+        compression::{case_insensitive_lookup::case_insensitive_string::CaseInsensitiveString, ArchiveHandleKind, ProcessArchive, SeekWithTempFileExt},
         install_modlist::directives::IteratorTryFlatMapExt,
         progress_bars_v2::count_progress_style,
     },
@@ -22,7 +22,7 @@ use {
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
 
-type PreheatedArchiveHashPathsInner = BTreeMap<NonEmpty<PathBuf>, Arc<SourceKind>>;
+type PreheatedArchiveHashPathsInner = BTreeMap<NonEmpty<CaseInsensitiveString>, Arc<SourceKind>>;
 
 pub struct PreheatedArchiveHashPaths(PreheatedArchiveHashPathsInner);
 
@@ -30,11 +30,13 @@ impl PreheatedArchiveHashPaths {
     pub fn get_archive(&self, path: NonEmpty<PathBuf>) -> Result<Arc<SourceKind>> {
         match path.len() {
             1 => Ok(Arc::new(SourceKind::JustPath(path.head.clone()))),
-            _ => self
-                .0
-                .get(&path)
-                .cloned()
-                .with_context(|| format!("{path:?} not found in [{:#?}]", self.0.keys().collect_vec())),
+            _ => {
+                let path = path.clone().map(|p| CaseInsensitiveString::from_path(&p));
+                self.0
+                    .get(&path)
+                    .cloned()
+                    .with_context(|| format!("{path:?} not found in [{:#?} ... ]", self.0.keys().take(64).collect_vec()))
+            }
         }
         .with_context(|| format!("when getting path [{path:?}] out of a preheated archive"))
     }
@@ -218,7 +220,12 @@ impl PreheatedArchiveHashPaths {
                     })
                 },
             )
-            .map(|(preheated, _)| preheated)
+            .map(|(preheated, _)| {
+                preheated
+                    .into_iter()
+                    .map(|(k, v)| (k.map(|p| CaseInsensitiveString::from_path(&p)), v))
+                    .collect()
+            })
             .map(Self)
     }
 }

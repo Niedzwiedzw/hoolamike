@@ -40,6 +40,7 @@ pub trait ProcessArchive: Sized {
             .map(|(_, handle)| handle)
     }
 }
+pub mod case_insensitive_lookup;
 
 impl ProcessArchive for ArchiveHandle<'_> {
     #[instrument(skip(self), fields(kind=?ArchiveHandleKind::from(&*self)))]
