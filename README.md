@@ -1,99 +1,85 @@
-![**Hoolamike**](./media/hoolamike-logo.png)
+# Hoolamike
+[![GitHub version](https://img.shields.io/github/v/tag/Niedzwiedzw/hoolamike?label=version&style=flat-square)](https://github.com/sNiedzwiedzw/hoolamike./releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/Niedzwiedzw/hoolamike.svg?style=flat-square)](https://github.com/Niedzwiedzw/hoolamike./stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/Niedzwiedzw/hoolamike.svg?style=flat-square)](https://github.com/Niedzwiedzw/hoolamike./issues)
+[![GitHub license](https://img.shields.io/github/license/Niedzwiedzw/hoolamike.svg?style=flat-square)](https://github.com/Niedzwiedzw/hoolamike./blob/dev/LICENSE)
+![Discord](https://img.shields.io/discord/1320853150910906541)
 
-# 🏄 Hoolamike: Wabbajack Modlist Installer for Linux 
+> [!WARNING]  
+> This software is in **alpha**. Features may break and change at any time. Absolutely no warranty is provided. 
 
-Hoolamike is here to ease the process of installing **Wabbajack modlists** on Linux without the hassle of virtual machines or Wine. This project ports the functionality on a **per-modlist basis**, enabling seamless integration with your favorite games. 🌟
-## 🎮 Games currently confirmed to work
-- [**Stardew Valley**](https://store.steampowered.com/app/413150/Stardew_Valley/) 🥕  
-- [**Skyrim**](https://store.steampowered.com/app/489830/The_Elder_Scrolls_V_Skyrim_Special_Edition/) 🐉 
-- [**Fallout 4**](https://store.steampowered.com/app/377160/Fallout_4/) ☢️  
-- [**Fallout: New Vegas**](https://store.steampowered.com/app/22380/Fallout_New_Vegas/) ☢️  
-- [**Fallout 3**](https://store.steampowered.com/app/22300/Fallout_3/) ☢️  
+**Hoolamike** is a high performance and cross-platform mod installation suite written in Rust.
 
-## 🚀 Lists currently confirmed to work (all lists for above games SHOULD work, but we cannot test them all without your help)
+## Features
+
+- Simple configuration with YAML
+- Wabbajack-compatible mod list installer
+- (Fallout: New Vegas) Large-Address Aware Executable patcher
+- (Fallout: New Vegas) .MPI (Tale of Two Wastelands, Ultimate Edition ESM Fixes) installer
+- (Skyrim) Texture conversion utilities
+
+## Games confirmed to work
+- [**Stardew Valley**](https://store.steampowered.com/app/413150/)
+- [**Skyrim**](https://store.steampowered.com/app/489830/)
+- [**Fallout 4**](https://store.steampowered.com/app/377160/)  
+- [**Fallout: New Vegas**](https://store.steampowered.com/app/22380/)  
+- [**Fallout 3**](https://store.steampowered.com/app/22370/)
+
+## Lists confirmed to work
+> [!NOTE]
+> All the available mod lists for the games listed _should_  work but we cannot test them all without ***your*** help. Join our [Discord](https://discord.gg/xYHjpKX3YP) today!
+
 - [**Tuxborn**](https://github.com/Omni-guides/Tuxborn): A Wabbajack Modlist for Skyrim SE designed with the Steam Deck in mind 🐉  
 - [**Wasteland Reborn**](https://github.com/Camora0/Wasteland-Reborn): modlist that aims to create a fully featured, lore friendly rebuild of Fallout 4 from the ground up.  ☢️  
 - [**Magnum Opus**](https://github.com/LivelyDismay/magnum-opus): what one would describe as a "kitchen sink list." ☢️  
 - [**Begin Again**](https://www.nexusmods.com/newvegas/mods/79547): modlist focused on bringing the gameplay feel of later Fallout titles into Fallout 3 and New Vegas ☢️  
 
-## 🔮 Wishlist & Community Support
+Make sure to ⭐ star their repositories — their work is the backbone of this project!
 
-Want a specific modlist to be supported? 🤔  
-Join our **[Discord Community](https://discord.gg/xYHjpKX3YP)** and let us know! Your feedback and suggestions drive this project forward. 💬
+## Quick start
 
-## 💡 Goals
+1. [Download the latest release](https://github.com/Niedzwiedzw/hoolamike/releases/latest), or [compile from source](compiling-from-source). You can place the resulting binary wherever you'd like.
 
-Wabbajack modlist installation logic is being slowly ported from C# to Rust, while keeping linux support constantly in mind.  🛠️
-## ❌ Non-goals 
-Replacing Wabbajack, modlist creation - this project focuses only on installation of modlists keeping them compatible with Wabbajack.
+2. Add the Hoolamike binary to your $PATH
 
-## 🙏 Special Thanks
+3. Hoolamike uses YAML for configuration. You can create the default configuration file like so:
+    ```bash
+    hoolamike print-default-config > hoolamike.yaml
+    ```
+
+   You may also use a specific configuration file 
+   ```bash
+   hoolamike -c /path/to/provided/file [OPTION]
+   ```
+4. For basic instruction, you may run the following.
+   ```bash
+   hoolamike --help
+   ```
+---
+To see an annotated configuration file, click [here](/docs/example.yaml).
+
+For more detailed usage instructions, please consult the [Documentation](/docs/).
+
+## Compiling from source
+1. Clone the repository with Git
+2. Enter the resulting folder
+    ```bash
+    cd hoolamike
+    ```
+2. Install Hoolamike using Cargo
+   ```bash
+   cargo install --path crates/hoolamike
+   ```
+3. The default installation location is `~/.cargo/bin/`. Ensure the binary is in your system's `$PATH`, or reference it directly by running
+   ```bash
+   ~/.cargo/bin/hoolamike. 
+   ```
+   
+If you have followed these steps correctly, You will see a help message. If you need further instruction, feel free to ask in our [Official Discord server](https://discord.gg/xYHjpKX3YP).
+
+## Attributions
 
 A huge shoutout to these amazing libraries that make Hoolamike possible:
 
-- [bsa-rs](https://github.com/Ryan-rsm-McKenzie/bsa-rs) 🗂️: Efficient handling of BSA archives.
-- [directxtex](https://github.com/Ryan-rsm-McKenzie/directxtex-rs) 🖼️: Processing DDS image formats with style.
-
-Make sure to ⭐ star their repositories — their work is the backbone of this project!
-
-## ⭐ Features
-
-- 🐧 **Linux Native**: Say goodbye to VMs or Wine setup, enjoy quick and streamlined installation process.  
-- ⚡ **Optimized for Performance**: Parallelization of installation steps is one of the main focuses. As much as possible is performed in a multithreaded fashion to lower the wait time.
-- 📚 **Per-Modlist Focus**: Tailored support for specific modlists.  
-
-## 🏄 How to Get Started with Hoolamike
-1. Download the latest release from https://github.com/Niedzwiedzw/hoolamike/releases, unpack the archive and give appropriate permissions to hoolamike (`chmod u+x hoolamike`). You can place the binary wherever you want.
-2. Configure Hoolamike:
-    Run `hoolamike print-default-config > hoolamike.yaml` to generate a default configuration file. (or ask for examples on **[Discord Community](https://discord.gg/xYHjpKX3YP)**)
-3. Edit `hoolamike.yaml` in a text editor. Add your Nexus API key, which you can obtain from https://next.nexusmods.com/settings/api-keys.
-    Specify game directories, such as:
-```
-  games:
-    Fallout4:
-      root_directory: "/path/to/Fallout 4/"
-```
-4. Obtain the required modlist file: Download the <modlist-name>.wabbajack file for your desired modlist. You might need to check the Wabbajack community for the appropriate link. Place this file in the same directory as hoolamike.yaml.
-5. Update the configuration: In `hoolamike.yaml`, set the path to the downloaded .wabbajack file under `installation.wabbajack_file_path`.
-6. Install the modlist: Run `hoolamike install`. 
-
-If you face any issues, consult the **[Discord Community](https://discord.gg/xYHjpKX3YP)** for further guidance or file a support ticket.
-
-## 🚧 Compiling from source
-1. Install the Rust toolchain: Visit https://rustup.rs/ to install Rust.
-2. Clone the Hoolamike repository: Run git clone https://github.com/Niedzwiedzw/hoolamike to download the project files.
-3. Switch to the nightly Rust compiler: Run rustup default nightly to set the nightly version as default. This step is required because Hoolamike uses features available only in the nightly version of Rust.
-4. Install Hoolamike using Cargo: Navigate to the repository and execute `cargo install --path crates/hoolamike`.
-5. Verify the installation: Once installed, the binary will typically be located in ~/.cargo/bin/. Ensure the binary is in your system's $PATH, or reference it directly by running ~/.cargo/bin/hoolamike. You should see a help message indicating successful installation.## 💬 Join the Community
-
-Whether you're here to wishlist modlists, contribute, or just chat with fellow enthusiasts, our **[Discord Community](https://discord.gg/xYHjpKX3YP)** is open for you! 🎉
-
-## Troubleshooting "Too Many Open Files" Error
-
-If you encounter a "Too many open files" error (os error 24) while running hoolamike, it's  due to the default system's file descriptor limit being too low.
-
-### Solution
-
-Increase the file descriptor limit before running hoolamike. You can do this by executing the following command in your terminal:
-
-```bash
-ulimit -n 64556
-```
-
-This sets the maximum number of open file descriptors to 64,556, which has been found to resolve the issue. Note that lower values (e.g., 1024 or 2048) may not be sufficient.
-
-### Steps to Verify Current Limits
-
-To check your current file descriptor limit, run:
-
-```bash
-ulimit -n
-```
-
-## 🌟 Contributing
-
-We welcome contributions of all kinds! Whether it’s fixing bugs, improving documentation, or adding support for new modlists, your help is appreciated. Check out our `CONTRIBUTING.md` for guidelines.
-
----
-
-Hoolamike is built **by Linux gamers, for Linux gamers**. Let's make modding on Linux better together! 🐧✨
+- [bsa-rs](https://github.com/Ryan-rsm-McKenzie/bsa-rs): Efficient handling of BSA archives.
+- [directxtex](https://github.com/Ryan-rsm-McKenzie/directxtex-rs): Processing DDS image formats with style.
