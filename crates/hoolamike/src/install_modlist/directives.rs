@@ -78,7 +78,7 @@ pub struct DirectivesHandler {
 #[derive(Debug, Clone)]
 pub struct DirectivesHandlerConfig {
     pub wabbajack_file: WabbajackFileHandle,
-    pub output_directory: PathBuf,
+    pub output_directory: ExistingPathBuf,
     pub game_directory: PathBuf,
     pub downloads_directory: PathBuf,
     pub texconv_wine_state: Option<TexconvWineState>,

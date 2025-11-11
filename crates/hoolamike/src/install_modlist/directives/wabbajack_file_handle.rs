@@ -1,5 +1,5 @@
 use {
-    super::{IteratorTryFlatMapExt, PathReadWrite},
+    super::IteratorTryFlatMapExt,
     crate::{
         compression::{ArchiveFileHandle, ProcessArchive, zip::ZipArchive},
         utils::ExistingPathRead,
@@ -9,13 +9,7 @@ use {
     itertools::Itertools,
     parking_lot::Mutex,
     rayon::{iter::ParallelIterator, slice::ParallelSlice},
-    std::{
-        collections::BTreeMap,
-        ops::Div,
-        path::{Path, PathBuf},
-        str::FromStr,
-        sync::Arc,
-    },
+    std::{collections::BTreeMap, ops::Div, str::FromStr, sync::Arc},
     tap::prelude::*,
     tempfile::TempPath,
     tracing::instrument,

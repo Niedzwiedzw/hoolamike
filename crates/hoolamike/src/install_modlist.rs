@@ -7,8 +7,10 @@ use {
         error::TotalResult,
         extensions::texconv_wine,
         modlist_json::{Archive, HumanUrl, Modlist},
+        path::ExistingPath,
         progress_bars_v2::io_progress_style,
         tokio_runtime_multi,
+        utils::PathReadWrite,
         wabbajack_file::WabbajackFile,
     },
     anyhow::Context,
@@ -31,7 +33,10 @@ pub mod download_cache;
 pub mod downloads;
 
 #[instrument]
-fn setup_texconv_wine(at: &Path, texconv_wine::ExtensionConfig { wine_path, texconv_path }: texconv_wine::ExtensionConfig) -> anyhow::Result<TexconvWineState> {
+fn setup_texconv_wine(
+    at: &ExistingPath,
+    texconv_wine::ExtensionConfig { wine_path, texconv_path }: texconv_wine::ExtensionConfig,
+) -> anyhow::Result<TexconvWineState> {
     #[rustfmt::skip]
     const TEXCONV_DEPS: &[(&str, &str, Option<&str>, &[&str])] = &[
         (
@@ -56,10 +61,14 @@ fn setup_texconv_wine(at: &Path, texconv_wine::ExtensionConfig { wine_path, texc
                 .with_context(|| format!("parsing url [{url}]"))
                 .pipe(ready)
                 .and_then(|url| {
-                    stream_file_validate(url, at.join(name), None).and_then(async |file| match expected_hash {
-                        Some(expected_hash) => validate_hash_sha512(file.clone(), expected_hash).await,
-                        None => Ok(file),
-                    })
+                    at.join_new(name)
+                        .with_context(|| format!("adding '{name}' to '{at}'"))
+                        .pipe(ready)
+                        .and_then(|at| stream_file_validate(url, at, None))
+                        .and_then(async |file| match expected_hash {
+                            Some(expected_hash) => validate_hash_sha512(file.clone(), expected_hash).await,
+                            None => Ok(file),
+                        })
                 })
                 .await
                 .with_context(|| format!("downloading [{url}]"))
@@ -107,8 +116,10 @@ pub fn install_modlist(
         contains,
     }: DebugHelpers,
 ) -> TotalResult<()> {
-    std::fs::create_dir_all(&installation_path)
-        .with_context(|| format!("creating installation_path: {installation_path:?}"))
+    let installation_path = installation_path
+        .utf8_platform_path()
+        .and_then(|installation_path| installation_path.create_dir())
+        .context("initializing installation path")
         .map_err(|e| vec![e])?;
 
     let texconv_wine_state = extras
@@ -185,14 +196,15 @@ pub fn install_modlist(
             match skip_verify_and_downloads {
                 true => archives
                     .into_iter()
-                    .map(|Archive { descriptor, state: _ }| WithArchiveDescriptor {
-                        inner: synchronizers
+                    .map(|Archive { descriptor, state: _ }| {
+                        synchronizers
                             .cache
-                            .download_output_path(descriptor.name.clone()),
-                        descriptor,
+                            .download_output_path(descriptor.name.as_str())
+                            .and_then(|inner| inner.exists_utf8())
+                            .map(|inner| WithArchiveDescriptor { inner, descriptor })
                     })
-                    .collect_vec()
-                    .pipe(Ok)
+                    .collect::<anyhow::Result<Vec<_>>>()
+                    .map_err(|e| vec![e])
                     .pipe(ready)
                     .boxed_local(),
                 false => synchronizers.clone().sync_downloads(archives).boxed_local(),

@@ -8,7 +8,7 @@ use {
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     std::io::{Read, Write},
     tracing::warn,
-    typed_path::{Utf8PlatformPath, Utf8PlatformPathBuf},
+    typed_path::{Utf8PlatformPathBuf},
     wine_wrapper::wine_context::{Initialized, WineContext},
 };
 

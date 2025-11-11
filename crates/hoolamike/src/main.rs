@@ -125,7 +125,7 @@ pub(crate) mod install_modlist;
 // pub(crate) mod path;
 pub(crate) mod install_modlist_v2 {
     pub mod modlist_file_structure {
-        use {crate::path::CaseInsensitivePathBuf, std::path::PathBuf};
+        use crate::path::CaseInsensitivePathBuf;
 
         pub struct ExpectedFile {
             pub at_path: CaseInsensitivePathBuf,

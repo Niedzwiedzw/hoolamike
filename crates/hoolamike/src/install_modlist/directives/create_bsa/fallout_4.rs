@@ -1,29 +1,41 @@
 use {
-    super::{PathReadWrite, count_progress_style, try_optimize_memory_mapping},
+    super::{count_progress_style, try_optimize_memory_mapping},
     crate::{
         modlist_json::{
             BA2DX10EntryChunk,
             directive::create_bsa_directive::ba2::{BA2DX10Entry, BA2FileEntry, Ba2, DirectiveStateData, FileState},
             type_guard::WithTypeGuard,
         },
-        path::{CaseInsensitivePathBuf, IntoUtf8CaseInsensitivePath, Utf8TypedPathToPlatformExt},
+        path::{CaseInsensitivePathBuf, Utf8TypedPathToPlatformExt},
         utils::ExistingPathRead,
     },
     anyhow::{Context, Result},
     ba2::{
-        BString, Borrowed, CompressionResult, ReaderWithOptions,
+        BString,
+        Borrowed,
+        CompressionResult,
+        ReaderWithOptions,
         fo4::{
-            Archive, ArchiveKey, ArchiveOptions, ChunkCompressionOptions, CompressionFormat, CompressionLevel, File, FileHeader, FileReadOptions, Format,
+            Archive,
+            ArchiveKey,
+            ArchiveOptions,
+            ChunkCompressionOptions,
+            CompressionFormat,
+            CompressionLevel,
+            File,
+            FileHeader,
+            FileReadOptions,
+            Format,
             Version as ArchiveVersion,
         },
     },
     case_insensitive_path::ExistingPath,
     rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
-    std::path::{Path, PathBuf},
+    std::path::Path,
     tap::prelude::*,
     tracing::{info_span, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
-    typed_path::{Utf8TypedPath, Utf8WindowsPath, Utf8WindowsPathBuf},
+    typed_path::Utf8WindowsPath,
 };
 
 #[derive(derive_more::From)]

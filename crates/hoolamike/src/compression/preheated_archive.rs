@@ -1,8 +1,13 @@
 use {
-    super::{ProcessArchive, SeekWithTempFileExt}, crate::compression::ArchiveHandle, anyhow::{Context, Result}, case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath}, itertools::Itertools, rayon::iter::{IntoParallelRefIterator, ParallelIterator}, std::{
-        collections::BTreeMap,
-        path::{Path, PathBuf},
-    }, tap::prelude::*, tempfile::TempPath
+    super::{ProcessArchive, SeekWithTempFileExt},
+    crate::compression::ArchiveHandle,
+    anyhow::{Context, Result},
+    case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath},
+    itertools::Itertools,
+    rayon::iter::{IntoParallelRefIterator, ParallelIterator},
+    std::collections::BTreeMap,
+    tap::prelude::*,
+    tempfile::TempPath,
 };
 
 #[derive(Debug)]

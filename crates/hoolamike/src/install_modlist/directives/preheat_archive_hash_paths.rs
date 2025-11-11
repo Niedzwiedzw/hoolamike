@@ -3,7 +3,7 @@ use {
     crate::{
         compression::{ArchiveHandleKind, ProcessArchive, SeekWithTempFileExt},
         install_modlist::directives::IteratorTryFlatMapExt,
-        path::{Path, PathBuf},
+        path::PathBuf,
         progress_bars_v2::count_progress_style,
     },
     anyhow::{Context, Result},
@@ -179,7 +179,7 @@ impl PreheatedArchiveHashPaths {
                                                                     .with_context(|| {
                                                                         format!(
                                                                             "extracting from archive [{archive:?}] (parent={parent:?}, \
-                                                                         archive_paths={archive_paths:#?})"
+                                                                             archive_paths={archive_paths:#?})"
                                                                         )
                                                                     })
                                                             })

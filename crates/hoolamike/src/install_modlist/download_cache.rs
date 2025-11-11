@@ -10,7 +10,7 @@ use {
     futures::{FutureExt, TryFutureExt},
     hex::{FromHex, ToHex},
     sha2::{Sha512, digest::Digest},
-    std::{future::ready, hash::Hasher, path::PathBuf, sync::Arc},
+    std::{future::ready, hash::Hasher, sync::Arc},
     tap::prelude::*,
     tokio::io::AsyncReadExt,
     tracing_indicatif::span_ext::IndicatifSpanExt,
@@ -74,16 +74,16 @@ async fn calculate_hash_wabbajack(path: &ExistingPath) -> Result<u64> {
 }
 
 #[tracing::instrument]
-async fn calculate_hash_sha512(path: PathBuf) -> Result<[u8; 64]> {
+async fn calculate_hash_sha512(path: &ExistingPath) -> Result<[u8; 64]> {
     let size = tokio::fs::metadata(&path)
         .await
         .context("no such file")?
         .len();
 
     let file_name = path
+        .as_path()
         .file_name()
         .context("file must have a name")?
-        .to_string_lossy()
         .to_string();
     tracing::Span::current().pipe(|pb| {
         pb.pb_set_style(&io_progress_style());
@@ -92,7 +92,7 @@ async fn calculate_hash_sha512(path: PathBuf) -> Result<[u8; 64]> {
     });
 
     let mut file = tokio::fs::File::open(&path)
-        .map_with_context(|| format!("opening file [{}]", path.display()))
+        .map_with_context(|| format!("opening file [{}]", path))
         .await?
         .pipe(tokio::io::BufReader::new);
 
@@ -149,8 +149,8 @@ pub fn sha512_hex_string(input: &[u8]) -> String {
     hex::encode(result)
 }
 
-pub async fn validate_hash_sha512(path: PathBuf, expected_hash_str: &str) -> Result<PathBuf> {
-    calculate_hash_sha512(path.clone())
+pub async fn validate_hash_sha512(path: ExistingPathBuf, expected_hash_str: &str) -> Result<ExistingPathBuf> {
+    calculate_hash_sha512(&path)
         .and_then(|hash| {
             <[u8; 64]>::from_hex(expected_hash_str)
                 .with_context(|| format!("bad hash: '{expected_hash_str}'"))
@@ -162,7 +162,7 @@ pub async fn validate_hash_sha512(path: PathBuf, expected_hash_str: &str) -> Res
                 .pipe(ready)
         })
         .await
-        .with_context(|| format!("validating hash for [{}]", path.display()))
+        .with_context(|| format!("validating hash for [{path}]"))
 }
 
 pub async fn validate_hash_wabbajack(path: ExistingPathBuf, expected_hash: String) -> Result<ExistingPathBuf> {

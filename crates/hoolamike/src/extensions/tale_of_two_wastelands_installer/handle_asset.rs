@@ -1,7 +1,6 @@
 use {
     super::{
         LazyArchiveChunk,
-        PathReadWrite,
         RepackingContext,
         SeekWithTempFileExt,
         manifest_file::asset::{Asset, CopyAsset, LocationIndex, NewAsset, PatchAsset},
@@ -12,9 +11,7 @@ use {
     },
     anyhow::{Context, Result},
     hoola_audio::Mp3TargetChannelMode,
-    normalize_path::NormalizePath,
     std::{collections::BTreeMap, io::BufReader, sync::Arc},
-    tap::prelude::*,
     tracing::instrument,
 };
 

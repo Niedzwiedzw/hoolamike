@@ -1,14 +1,16 @@
 use {
     super::{ProcessArchive, *},
     crate::{
-        compression::case_insensitive_lookup::CaseInsenitiveBasicListing, path::PathBuf, progress_bars_v2::io_progress_style, utils::PathFileNameOrEmpty,
-        utils::StreamLenExt,
+        compression::case_insensitive_lookup::CaseInsenitiveBasicListing,
+        path::PathBuf,
+        progress_bars_v2::io_progress_style,
+        utils::{PathFileNameOrEmpty, StreamLenExt},
     },
     ::compress_tools::*,
     anyhow::{Context, Result},
     itertools::Itertools,
     num::ToPrimitive,
-    std::{collections::BTreeSet, io::Seek, str::FromStr},
+    std::{io::Seek, str::FromStr},
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
 

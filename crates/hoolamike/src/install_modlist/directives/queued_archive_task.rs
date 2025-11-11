@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use case_insensitive_path::{CaseInsensitivePathBuf, ExistingPathBuf, IntoUtf8CaseInsensitivePath};
 
 pub type Extracted = tempfile::TempPath;

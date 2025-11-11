@@ -25,7 +25,7 @@ use {
         collections::BTreeMap,
         convert::identity,
         io::{BufReader, Read},
-        path::{Path, PathBuf},
+        path::PathBuf,
         str::FromStr,
         sync::Arc,
     },

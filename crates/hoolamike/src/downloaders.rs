@@ -1,7 +1,6 @@
 use {
     crate::modlist_json::{ArchiveDescriptor, HumanUrl},
     case_insensitive_path::ExistingPathBuf,
-    std::path::PathBuf,
     typed_path::Utf8PlatformPathBuf,
 };
 

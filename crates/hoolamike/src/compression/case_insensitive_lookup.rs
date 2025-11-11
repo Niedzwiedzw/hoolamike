@@ -2,11 +2,7 @@ use {
     crate::path::CaseInsensitivePathBuf,
     anyhow::{Context, Result},
     itertools::Itertools,
-    std::{
-        collections::BTreeMap,
-        path::{Path},
-        str::FromStr,
-    },
+    std::{collections::BTreeMap, path::Path, str::FromStr},
     tap::prelude::*,
 };
 
@@ -31,9 +27,6 @@ impl<V> CaseInsensitiveArchiveListing<V> {
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, CaseInsensitivePathBuf, V> {
-        self.0.keys()
     }
 
     pub fn from_paths_extra(entries: impl Iterator<Item = (impl AsRef<Path>, V)>) -> Result<Self> {
@@ -100,9 +93,7 @@ impl<V> IntoIterator for CaseInsensitiveArchiveListing<V> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use super::*;
+    use {super::*, std::path::PathBuf};
 
     #[test_log::test]
     fn test_weird_key_1() -> Result<()> {

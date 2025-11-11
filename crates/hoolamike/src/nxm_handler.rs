@@ -24,11 +24,12 @@ use {
     notify::{Watcher, event::CreateKind},
     serde::{Deserialize, Serialize},
     single_instance_server::listen_for_nxm_links,
-    std::{collections::HashMap, convert::identity, future::ready, path::PathBuf, sync::Arc},
+    std::{collections::HashMap, convert::identity, future::ready, sync::Arc},
     tap::prelude::*,
     tokio_stream::wrappers::UnboundedReceiverStream,
     tracing::{debug, info, warn},
     tracing_indicatif::span_ext::IndicatifSpanExt,
+    typed_path::Utf8PlatformPathBuf,
     utils::AbortOnDropExt,
 };
 
@@ -182,7 +183,10 @@ pub async fn run(
                 })
                 .context("extracting specified wabbajack file")?;
 
-            let download_cache = downloaders.downloads_directory.pipe(Utf8TypedPa) DownloadCache::new(downloaders.downloads_directory)
+            let download_cache = downloaders
+                .downloads_directory
+                .utf8_platform_path()
+                .and_then(DownloadCache::new)
                 .context("initializing download cache")
                 .map(Arc::new)?;
 
@@ -266,7 +270,14 @@ pub async fn run(
                 let mut watcher =
                     notify::RecommendedWatcher::new(move |res| tx.send(res).unwrap(), notify::Config::default()).context("watching the filesystem failed")?;
                 watcher
-                    .watch(&download_cache.root_directory, notify::RecursiveMode::NonRecursive)
+                    .watch(
+                        download_cache
+                            .root_directory
+                            .as_path()
+                            .as_str()
+                            .pipe(std::path::Path::new),
+                        notify::RecursiveMode::NonRecursive,
+                    )
                     .context("watching downloads directory for changes")?;
                 (UnboundedReceiverStream::new(rx), watcher)
             };
@@ -320,22 +331,27 @@ pub async fn run(
             #[derive(derive_more::From)]
             enum DownloaderEvent {
                 NxmClick((HumanUrl, DownloadFileRequest)),
-                Newfile(PathBuf),
+                Newfile(Utf8PlatformPathBuf),
             }
 
-            let mut downloader_events = [nxm_clicks.map(DownloaderEvent::from).boxed(), new_files.map(DownloaderEvent::from).boxed()]
-                .pipe(futures::stream::iter)
-                .flatten_unordered(100);
+            let mut downloader_events = [
+                nxm_clicks.map(DownloaderEvent::from).map(Ok).boxed(),
+                new_files
+                    .map(|p| p.utf8_platform_path().map(DownloaderEvent::from))
+                    .boxed(),
+            ]
+            .pipe(futures::stream::iter)
+            .flatten_unordered(100);
 
             let mut filename_lookup = archive_lookup
                 .values()
                 .map(|archive| {
-                    (
-                        download_cache.download_output_path(archive.descriptor.name.clone()),
-                        DownloadFileRequest::from_nexus_state(archive.inner.clone()).nexus_website_url(),
-                    )
+                    download_cache
+                        .download_output_path(archive.descriptor.name.as_str())
+                        .map(|name| (name, DownloadFileRequest::from_nexus_state(archive.inner.clone()).nexus_website_url()))
                 })
-                .collect::<HashMap<_, _>>();
+                .collect::<Result<HashMap<_, _>>>()
+                .context("building filename lookup")?;
 
             while let Some(nexus_website_url) = archive_lookup.keys().next().cloned() {
                 info!("queued {}/{}", initial_count.saturating_sub(archive_lookup.len()), initial_count);
@@ -356,17 +372,19 @@ pub async fn run(
                     .with_context(|| format!("opening [{nexus_website_url}] with ({use_browser}) failed: check 'hoolamike handle-nxm --help'"))?;
 
                 match downloader_events.next().await {
-                    Some(s) => match s {
+                    Some(Ok(s)) => match s {
                         DownloaderEvent::NxmClick((download_url, click)) => {
                             let Some(archive) = archive_lookup.remove(&click.nexus_website_url()) else {
                                 warn!("not on the list: {click:?}");
                                 continue;
                             };
-                            queue_download_task
-                                .send(DownloadTask {
-                                    inner: (download_url, download_cache.download_output_path(archive.descriptor.name.clone())),
+                            download_cache
+                                .download_output_path(archive.descriptor.name.as_str())
+                                .map(|name| DownloadTask {
+                                    inner: (download_url, name),
                                     descriptor: archive.descriptor,
                                 })
+                                .and_then(|task| queue_download_task.send(task).context("sending task"))
                                 .with_context(|| format!("when queueing download task for {}", archive.inner.name))?;
                         }
                         DownloaderEvent::Newfile(path_buf) => filename_lookup
@@ -385,6 +403,10 @@ pub async fn run(
                                 }
                             }),
                     },
+                    Some(Err(e)) => {
+                        tracing::error!("what the hell?\n{e:?}");
+                        continue;
+                    }
                     None => {
                         anyhow::bail!("server stopped?")
                     }

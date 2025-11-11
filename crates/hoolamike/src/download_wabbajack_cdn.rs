@@ -93,7 +93,7 @@ impl CommandArgs {
                                 .and_then(async |mut output_file| {
                                     for (idx, source) in files {
                                         tokio::fs::File::open(&source)
-                                            .map(|r| r.with_context(|| format!("opening chunk file at {}", source.display())))
+                                            .map(|r| r.with_context(|| format!("opening chunk file at {}", source)))
                                             .and_then(async |mut source| {
                                                 tokio::io::copy(&mut source, &mut output_file)
                                                     .map(|r| r.with_context(|| format!("merging chunk [{idx}]")))

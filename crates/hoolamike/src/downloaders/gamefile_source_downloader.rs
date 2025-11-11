@@ -1,5 +1,4 @@
 use {
-    super::helpers::FutureAnyhowExt,
     crate::{
         config_file::{GameConfig, GamesConfig},
         install_modlist::download_cache::validate_hash_wabbajack,
@@ -9,7 +8,7 @@ use {
     case_insensitive_path::{ExistingPathBuf, PathExistsUtf8Ext},
     futures::TryFutureExt,
     indexmap::IndexMap,
-    std::{future::ready, path::PathBuf},
+    std::future::ready,
     tap::prelude::*,
 };
 

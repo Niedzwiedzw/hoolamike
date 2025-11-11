@@ -1,4 +1,5 @@
 use {
+    crate::utils::StreamLenExt,
     anyhow::{Context, Result},
     binrw::{
         meta::{ReadEndian, WriteEndian},
@@ -209,7 +210,7 @@ impl OctodiffMetadata {
         while let Some(chunk) = read_next_command(&mut reader).with_context(|| {
             //
             let position = reader.stream_position().unwrap();
-            let total_len = reader.stream_len().unwrap();
+            let total_len = StreamLenExt::stream_len(&mut reader).unwrap();
             let remaining_len = total_len - position;
             format!("nothing matched at cursor\nposition [{position}]\nremaining_len: {remaining_len }\ntotal_len: {total_len}")
         })? {
