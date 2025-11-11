@@ -184,10 +184,10 @@ impl AssetContext {
                             .extension()
                             .context("target file has no extension")?
                             .to_lowercase();
-                        if let Some(target_format) = target_format {
-                            if target_format != target_extension {
-                                anyhow::bail!("specified format [{target_format}], but extension is [{target_extension}]")
-                            }
+                        if let Some(target_format) = target_format
+                            && target_format != target_extension
+                        {
+                            anyhow::bail!("specified format [{target_format}], but extension is [{target_extension}]")
                         }
 
                         audio_enc

@@ -36,6 +36,7 @@ pub mod response_parsing {
 
             let document = Html::parse_fragment(line);
             let form_selector = Selector::parse("#download-form").unwrap();
+            #[allow(clippy::collapsible_if)]
             if let Some(form) = document.select(&form_selector).next() {
                 if let Some(action) = form.value().attr("action") {
                     url = action.replace("&amp;", "&");

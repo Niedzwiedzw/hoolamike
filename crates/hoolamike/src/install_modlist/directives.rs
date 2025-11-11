@@ -40,14 +40,6 @@ use {
     wabbajack_file_handle::WabbajackFileHandle,
 };
 
-pub(crate) fn create_file_all(path: &Path) -> Result<std::fs::File> {
-    path.parent()
-        .map(|parent| std::fs::create_dir_all(parent).with_context(|| format!("creating directory for [{}]", parent.display())))
-        .unwrap_or_else(|| Ok(()))
-        .and_then(|_| path.open_file_write())
-        .map(|(_, f)| f)
-}
-
 pub type DownloadSummary = Arc<BTreeMap<String, WithArchiveDescriptor<CaseInsensitivePathBuf>>>;
 
 pub mod create_bsa;
@@ -334,6 +326,7 @@ impl DirectivesHandler {
         }
         let manager = self.clone();
 
+        #[allow(clippy::large_enum_variant)]
         enum DirectiveStatus {
             Completed(u64),
             NeedsRebuild { reason: anyhow::Error, directive: Directive },

@@ -31,7 +31,8 @@ impl From<&ExistingPath> for CaseInsensitivePathBuf {
 
 impl From<ExistingPathBuf> for CaseInsensitivePathBuf {
     fn from(value: ExistingPathBuf) -> Self {
-        value.into()
+        let path: &ExistingPath = value.as_ref();
+        path.into()
     }
 }
 
@@ -39,13 +40,13 @@ impl Eq for CaseInsensitivePathBuf {}
 
 impl std::cmp::PartialOrd for CaseInsensitivePathBuf {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.lowercase.partial_cmp(&other.lowercase)
+        Some(self.cmp(other))
     }
 }
 
 impl std::cmp::Ord for CaseInsensitivePathBuf {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        self.lowercase.cmp(&other.lowercase)
     }
 }
 

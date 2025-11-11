@@ -129,7 +129,7 @@ impl ExistingPath {
 impl<T: AsRef<std::path::Path>> T {
     fn create_dir(&self) -> anyhow::Result<ExistingPathBuf> {
         let at = self.as_ref();
-        std::fs::create_dir_all(&at)
+        std::fs::create_dir_all(at)
             .context("creating all directories")
             .and_then(|()| ExistingPathBuf::new(at))
             .with_context(|| format!("creating directory at [{}]", at.display()))
@@ -256,8 +256,6 @@ impl AsBase64 for Path {
     }
 }
 
-pub type FileExtension<'a> = Option<&'a str>;
-
 #[extension_traits::extension(pub trait PathFileNameOrEmpty)]
 impl<P: AsRef<Path>> P {
     fn file_stem_opt(&self) -> Option<Cow<'_, str>> {
@@ -310,6 +308,7 @@ impl<P: AsRef<Path>> P {
     }
 }
 
+#[allow(dead_code)]
 pub trait IteratorTryFindMap: Iterator {
     /// Applies a fallible function to each item and returns the first `Ok(Some(value))`.
     /// Returns `Ok(None)` if no item produced a `Some`, or the first `Err` encountered.

@@ -50,15 +50,15 @@ impl<V> CaseInsensitiveArchiveListing<V> {
             .map(Self)
     }
     /// keys are actual strings from lookup
-    pub fn plan_extract_list<'a>(mut self, expected: &[&CaseInsensitivePathBuf]) -> Result<Vec<(CaseInsensitivePathBuf, V)>> {
+    pub fn plan_extract_list(mut self, expected: &[&CaseInsensitivePathBuf]) -> Result<Vec<(CaseInsensitivePathBuf, V)>> {
         expected
             .iter()
-            .map(|path| self.remove_entry(*path))
+            .map(|path| self.remove_entry(path))
             .collect::<Result<Vec<_>>>()
             .with_context(|| format!("planning extraction of [{}] paths", expected.len()))
     }
 
-    pub fn plan_extract_lookup<'a>(self, expected: &'a [&CaseInsensitivePathBuf]) -> Result<BTreeMap<CaseInsensitivePathBuf, V>> {
+    pub fn plan_extract_lookup(self, expected: &[&CaseInsensitivePathBuf]) -> Result<BTreeMap<CaseInsensitivePathBuf, V>> {
         self.plan_extract_list(expected)
             .map(|list| list.into_iter().collect())
     }

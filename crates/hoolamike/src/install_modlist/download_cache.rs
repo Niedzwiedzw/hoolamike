@@ -52,7 +52,7 @@ async fn calculate_hash_wabbajack(path: &ExistingPath) -> Result<u64> {
     tracing::Span::current().pipe(|pb| {
         pb.pb_set_style(&io_progress_style());
         pb.pb_set_length(size);
-        pb.pb_set_message(&file_name);
+        pb.pb_set_message(file_name);
     });
 
     let mut file = tokio::fs::File::open(&path)

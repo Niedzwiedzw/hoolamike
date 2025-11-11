@@ -47,7 +47,7 @@ impl WabbajackFileHandle {
                             .collect_vec()
                             .par_chunks(chunk_size)
                             .map(|chunk| {
-                                ZipArchive::new(&archive_path)
+                                ZipArchive::new(archive_path)
                                     .with_context(|| format!("opening archive at path [{archive_path:#?}]"))
                                     .and_then(|mut archive| {
                                         archive.get_many_handles(chunk).map(|handles| {

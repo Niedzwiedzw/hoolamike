@@ -14,10 +14,10 @@ name = "toml"
 command = "rust-analyzer"
 
 [language-server.rust-analyzer.config]
-cargo = { loadOutDirsFromCheck = true }      # THIS IS CRITICAL
+cargo = { loadOutDirsFromCheck = true }       # THIS IS CRITICAL
 cachePriming = { enable = true }
-check = { command = "check", enable = true } # <-- change from clippy
-checkOnSave = true                           # <-- change from clippy
+check = { command = "clippy", enable = true } # <-- change from clippy
+checkOnSave = true                            # <-- change from clippy
 procMacro = { enable = true }
 inlayHints = { enable = true }
 lens = { enable = true }

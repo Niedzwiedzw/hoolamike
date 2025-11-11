@@ -224,7 +224,7 @@ impl PreheatedArchiveHashPaths {
                     })
                 },
             )
-            .map(|(preheated, _)| preheated.into_iter().map(|(k, v)| (k, v)).collect())
+            .map(|(preheated, _)| preheated.into_iter().collect())
             .map(Self)
     }
 }

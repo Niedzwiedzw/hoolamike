@@ -128,10 +128,10 @@ pub async fn stream_merge_file_validate(from: Vec<HumanUrl>, to: Utf8PlatformPat
         }
         info!("{from_chunk} finished");
     }
-    if let Some(expected_size) = expected_size {
-        if downloaded != expected_size {
-            anyhow::bail!("[{from:?}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
-        }
+    if let Some(expected_size) = expected_size
+        && downloaded != expected_size
+    {
+        anyhow::bail!("[{from:?}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
     }
 
     to.exists_utf8_async().await
@@ -171,10 +171,10 @@ pub async fn stream_file_validate(from: HumanUrl, to: Utf8PlatformPathBuf, expec
             Err(message) => Err(message)?,
         }
     }
-    if let Some(expected_size) = expected_size {
-        if downloaded != expected_size {
-            anyhow::bail!("[{from}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
-        }
+    if let Some(expected_size) = expected_size
+        && downloaded != expected_size
+    {
+        anyhow::bail!("[{from}] download finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{downloaded} bytes])")
     }
 
     to.exists_utf8_async().await

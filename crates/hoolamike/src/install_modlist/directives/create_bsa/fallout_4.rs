@@ -187,7 +187,7 @@ pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, CaseInsensitivePat
                     ba2_file_entry.pipe(|BA2FileEntry { path, .. }| {
                         path.as_original_path()
                             .into_windows_encoding_checked()
-                            .map(|path| create_key(&path.as_path()))
+                            .map(|path| create_key(path.as_path()))
                             .map(|key| (key, file))
                     })
                 }),
@@ -207,7 +207,7 @@ pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, CaseInsensitivePat
                     ba2_dx10_entry.pipe(|BA2DX10Entry { path, .. }| {
                         path.as_original_path()
                             .into_windows_encoding_checked()
-                            .map(|path| create_key(&path.as_path()))
+                            .map(|path| create_key(path.as_path()))
                             .map(|key| (key, file))
                     })
                 }),
