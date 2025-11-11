@@ -191,7 +191,9 @@ pub enum CommandSummary {
 impl std::fmt::Display for CommandSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CommandSummary::Copy { start, length } => write!(f, "copy start={start}, length={length}"),
+            CommandSummary::Copy { start, length } => {
+                write!(f, "copy start={start}, length={length}")
+            }
             CommandSummary::Write(bytes) => write!(f, "write {}", hex::encode(bytes)),
         }
     }

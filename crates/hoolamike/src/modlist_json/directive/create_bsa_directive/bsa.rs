@@ -1,4 +1,4 @@
-use {super::*, crate::serde_type_guard, type_guard::WithTypeGuard};
+use {super::*, crate::serde_type_guard, case_insensitive_path::CaseInsensitivePathBuf, type_guard::WithTypeGuard};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 #[serde(untagged)]
@@ -19,7 +19,7 @@ pub struct FileStateData {
     /// path: PathBuf
     /// Description: File system path to the file.
     /// Usage: Access the file during installation.
-    pub path: MaybeWindowsPath,
+    pub path: CaseInsensitivePathBuf,
 }
 
 serde_type_guard!(BSAFileStateTypeGuard, "BSAFileState, Compression.BSA");

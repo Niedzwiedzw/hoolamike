@@ -15,6 +15,7 @@ intel_tex = ["dep:intel_tex"]
 # internal 
 wrapped-7zip.workspace = true
 hoola-audio.workspace = true
+case-insensitive-path.workspace = true
 
 # external
 anyhow.workspace = true

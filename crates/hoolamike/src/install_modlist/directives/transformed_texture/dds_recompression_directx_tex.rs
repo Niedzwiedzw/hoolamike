@@ -1,7 +1,7 @@
 use {
     crate::{modlist_json::image_format::DXGIFormat, progress_bars_v2::IndicatifWrapIoExt},
     anyhow::{Context, Result},
-    directxtex::{self, TexMetadata, DDS_FLAGS, DXGI_FORMAT, TEX_COMPRESS_FLAGS, TEX_FILTER_FLAGS, TEX_THRESHOLD_DEFAULT},
+    directxtex::{self, DDS_FLAGS, DXGI_FORMAT, TEX_COMPRESS_FLAGS, TEX_FILTER_FLAGS, TEX_THRESHOLD_DEFAULT, TexMetadata},
     num::ToPrimitive,
     std::io::{Read, Write},
     tap::prelude::*,

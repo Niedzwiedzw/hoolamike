@@ -8,7 +8,9 @@ members = [
   "crates/wine-wrapper-shell",
   "crates/texconv-wrapper",
   "crates/tokio-cached-future",
-  "crates/wrapped-7zip", "crates/hoola-progress",
+  "crates/wrapped-7zip",
+  "crates/hoola-progress",
+  "crates/case-insensitive-path",
 ]
 default-members = ["crates/hoolamike"]
 
@@ -18,7 +20,7 @@ license = "MIT"
 repository = "https://github.com/Niedzwiedzw/hoolamike"
 categories = ["modding"]
 readme = "README.md"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,6 +30,7 @@ wrapped-7zip.path = "crates/wrapped-7zip"
 hoola-audio.path = "crates/hoola-audio"
 texconv-wrapper.path = "crates/texconv-wrapper"
 wine-wrapper.path = "crates/wine-wrapper"
+case-insensitive-path.path = "crates/case-insensitive-path"
 
 # external
 anyhow = "1.0.96"
@@ -114,7 +117,7 @@ static_assertions = "1.1.0"
 symphonia = "0.5.4"
 tracing-flame = "0.2.0"
 tracing-indicatif = "0.3.13"
-typed-path = "0.10.0"
+typed-path = "0.12.0"
 unrar = "0.5.8"
 vorbis_rs = "0.5"
 walkdir = "2.5.0"

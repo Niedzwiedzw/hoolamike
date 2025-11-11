@@ -3,13 +3,13 @@ use {
         progress_span::{ProgressDelta, ProgressState},
         stream_compat::{UnboundedReceiverStream, UnboundedReceiverStreamExt},
     },
-    hooks::{read::ReadHookExt, write::WriteHookExt, IoHook},
+    hooks::{IoHook, read::ReadHookExt, write::WriteHookExt},
     std::{
         borrow::Cow,
-        collections::{btree_map::Entry, BTreeMap, BTreeSet},
+        collections::{BTreeMap, BTreeSet, btree_map::Entry},
         io::{Read, Write},
         iter::once,
-        sync::{atomic::AtomicUsize, Arc},
+        sync::{Arc, atomic::AtomicUsize},
     },
     tap::prelude::*,
 };

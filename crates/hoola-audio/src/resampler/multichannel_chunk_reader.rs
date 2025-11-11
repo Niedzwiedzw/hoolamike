@@ -1,5 +1,5 @@
 use {
-    super::{ringbuf_types::BufferSplit, RetBuffers},
+    super::{RetBuffers, ringbuf_types::BufferSplit},
     itertools::Itertools,
     nonempty::NonEmpty,
     ringbuf::traits::{Consumer, Observer, Producer},

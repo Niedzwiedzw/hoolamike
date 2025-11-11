@@ -20,7 +20,7 @@ pub struct FromArchiveDirective {
     /// to: String
     /// Description: Destination path for the directive's output.
     /// Usage: Where to place extracted or processed files.
-    pub to: MaybeWindowsPath,
+    pub to: CaseInsensitivePathBuf,
     /// archive_hash_path: Option<Vec<String>>
     /// Description: Paths within an archive, identified by their hashes.
     /// Usage: Locate specific files inside archives.
@@ -47,7 +47,7 @@ pub struct InlineFileDirective {
     /// to: String
     /// Description: Destination path for the directive's output.
     /// Usage: Where to place extracted or processed files.
-    pub to: MaybeWindowsPath,
+    pub to: CaseInsensitivePathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -65,7 +65,7 @@ pub struct PatchedFromArchiveDirective {
     /// to: String
     /// Description: Destination path for the directive's output.
     /// Usage: Where to place extracted or processed files.
-    pub to: MaybeWindowsPath,
+    pub to: CaseInsensitivePathBuf,
     /// archive_hash_path: Option<Vec<String>>
     /// Description: Paths within an archive, identified by their hashes.
     /// Usage: Locate specific files inside archives.
@@ -101,7 +101,7 @@ pub struct RemappedInlineFileDirective {
     /// to: String
     /// Description: Destination path for the directive's output.
     /// Usage: Where to place extracted or processed files.
-    pub to: MaybeWindowsPath,
+    pub to: CaseInsensitivePathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -123,7 +123,7 @@ pub struct TransformedTextureDirective {
     /// to: String
     /// Description: Destination path for the directive's output.
     /// Usage: Where to place extracted or processed files.
-    pub to: MaybeWindowsPath,
+    pub to: CaseInsensitivePathBuf,
     /// archive_hash_path: Option<Vec<String>>
     /// Description: Paths within an archive, identified by their hashes.
     /// Usage: Locate specific files inside archives.

@@ -1,0 +1,4 @@
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-analyzer-preview", "rust-src"]
+targets = ["x86_64-unknown-linux-gnu"]

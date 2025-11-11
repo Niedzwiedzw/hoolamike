@@ -1,6 +1,6 @@
 use {
     crate::ipc::{SerializedCommand, WineWrapperShellBin, WrappedStdout},
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     itertools::Itertools,
     std::{
         fs::File,

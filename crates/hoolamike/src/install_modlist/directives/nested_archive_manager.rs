@@ -6,7 +6,7 @@ use {
     once_cell::sync::Lazy,
     std::{future::ready, sync::Arc},
     tokio::sync::{OwnedSemaphorePermit, Semaphore},
-    tracing::{info_span, instrument, Instrument},
+    tracing::{Instrument, info_span, instrument},
 };
 
 pub fn max_open_files() -> usize {

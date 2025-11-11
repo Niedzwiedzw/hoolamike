@@ -1,13 +1,15 @@
 use {
     super::*,
     crate::{
-        modlist_json::{directive::TransformedTextureDirective, ImageState},
+        modlist_json::{ImageState, directive::TransformedTextureDirective},
         progress_bars_v2::IndicatifWrapIoExt,
+        utils::ExistingPathRead,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
-    wine_wrapper::wine_context::{Initialized, WineContext},
     std::io::{Read, Write},
-    tracing::{ warn},
+    tracing::warn,
+    typed_path::{Utf8PlatformPath, Utf8PlatformPathBuf},
+    wine_wrapper::wine_context::{Initialized, WineContext},
 };
 
 #[derive(Debug, Clone)]
@@ -19,7 +21,7 @@ pub struct TexconvWineState {
 #[derive(Clone, derivative::Derivative)]
 #[derivative(Debug)]
 pub struct TransformedTextureHandler {
-    pub output_directory: PathBuf,
+    pub output_directory: ExistingPathBuf,
     #[derivative(Debug = "ignore")]
     pub download_summary: DownloadSummary,
     pub texconv_wine_state: Option<TexconvWineState>,
@@ -67,7 +69,14 @@ impl TransformedTextureHandler {
     ) -> Result<u64> {
         let handle = tracing::Span::current();
         // let _image_dds_format = supported_image_format(format).context("checking for format support")?;
-        let output_path = self.output_directory.join(to_path.clone().into_path());
+        let output_path = self
+            .output_directory
+            .clone()
+            .case_insensitive()
+            .join_case_insensitive(to_path.clone())
+            .context("validating output path")?
+            .as_path()
+            .to_owned();
         let source_file = self
             .download_summary
             .resolve_archive_path(&archive_hash_path)
@@ -77,7 +86,7 @@ impl TransformedTextureHandler {
         handle
             .in_scope(|| {
                 let perform_copy = {
-                    move |from: &mut dyn Read, to: &mut dyn Write, target_path: PathBuf| {
+                    move |from: &mut dyn Read, to: &mut dyn Write, target_path: Utf8PlatformPathBuf| {
                         info_span!("perform_copy").in_scope(|| {
                             let mut writer = to;
                             let mut reader = tracing::Span::current().wrap_read(size, from);
@@ -100,7 +109,10 @@ impl TransformedTextureHandler {
                                                     &mut writer,
                                                     texconv_path,
                                                     wine_prefix_state.as_ref(),
-                                                    to_path.clone().into_path().extension().with_context(|| format!("no extension on [{to_path}]")).map(|e| e.to_string_lossy())?.as_ref()
+                                                    to_path
+                                                        .clone()
+                                                        .extension()
+                                                        .with_context(|| format!("no extension on [{to_path}]"))?,
                                                 )
                                                 .with_context(|| format!("tried because:\n{reason:?}"))
                                             },
@@ -121,12 +133,15 @@ impl TransformedTextureHandler {
                                         r
                                     }
                                 })
-                                // .or_else(|e| {
-                                //     error!("other texture recompression methods (fast) failed, falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n");
-                                //     dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
-                                //         .context("resizing using directx_tex")
-                                //         .with_context(|| format!("tried because:\n{e:?}"))
-                                // })
+                                .or_else(|e| {
+                                    // error!(
+                                    //     "other texture recompression methods (fast) failed,\
+                                    //     falling back to microsoft directxtex (slow)\nreason:\n{e:?}\n",
+                                    // );
+                                    dds_recompression_directx_tex::resize_dds(&mut reader, width, height, format, mip_levels, &mut writer)
+                                        .context("resizing using directx_tex")
+                                        .with_context(|| format!("tried because:\n{e:?}"))
+                                })
                                 .and_then(|wrote| {
                                     wrote
                                         .eq(&size)
@@ -142,9 +157,11 @@ impl TransformedTextureHandler {
                 };
 
                 source_file
-                    .open_file_read()
+                    .exists()
+                    .and_then(|source_file| source_file.open_file_read())
                     .and_then(|(source_path, mut final_source)| {
-                        create_file_all(&output_path).and_then(|mut output_file| {
+                        output_path.open_file_write()
+                        .and_then(|(_, mut output_file)| {
                             perform_copy(&mut final_source, &mut output_file, output_path.clone())
                                 // .or_else(|reason| {
                                 //     let _span =
@@ -162,7 +179,7 @@ impl TransformedTextureHandler {
                                 //         })
                                 //         .map(|_| ())
                                 // })
-                                .with_context(|| format!("when extracting from [{source_path:?}]({:?}) to [{}]", archive_hash_path, output_path.display()))
+                                .with_context(|| format!("when extracting from [{source_path:?}]({:?}) to [{output_path}]", archive_hash_path))
                         })
                     })?;
                 Ok(())

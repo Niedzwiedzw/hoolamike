@@ -1,53 +1,54 @@
 use {
     crate::{
-        downloaders::{helpers::FutureAnyhowExt, WithArchiveDescriptor},
+        downloaders::{WithArchiveDescriptor, helpers::FutureAnyhowExt},
         modlist_json::ArchiveDescriptor,
         progress_bars_v2::io_progress_style,
+        utils::PathReadWrite,
     },
     anyhow::{Context, Result},
+    case_insensitive_path::{ExistingPath, ExistingPathBuf, IntoUtf8CaseInsensitivePath},
     futures::{FutureExt, TryFutureExt},
     hex::{FromHex, ToHex},
-    sha2::{digest::Digest, Sha512},
+    sha2::{Sha512, digest::Digest},
     std::{future::ready, hash::Hasher, path::PathBuf, sync::Arc},
     tap::prelude::*,
     tokio::io::AsyncReadExt,
     tracing_indicatif::span_ext::IndicatifSpanExt,
+    typed_path::Utf8PlatformPathBuf,
 };
 
 #[derive(Debug, Clone)]
 pub struct DownloadCache {
-    pub root_directory: PathBuf,
+    pub root_directory: ExistingPathBuf,
 }
 impl DownloadCache {
-    pub fn new(root_directory: PathBuf) -> Result<Self> {
-        std::fs::create_dir_all(&root_directory)
+    pub fn new(root_directory: Utf8PlatformPathBuf) -> Result<Self> {
+        root_directory
+            .create_dir()
             .context("creating download directory")
-            .map(|_| Self {
-                root_directory: root_directory.clone(),
-            })
-            .with_context(|| format!("creating download cache handler at [{}]", root_directory.display()))
+            .map(|root_directory| Self { root_directory })
+            .with_context(|| format!("creating download cache handler at [{root_directory}]"))
     }
 }
 
-async fn read_file_size(path: &PathBuf) -> Result<u64> {
+async fn read_file_size(path: &ExistingPathBuf) -> Result<u64> {
     tokio::fs::metadata(&path)
-        .map_with_context(|| format!("getting size of {}", path.display()))
+        .map_with_context(|| format!("getting size of {}", path))
         .map_ok(|metadata| metadata.len())
         .await
 }
 
 #[tracing::instrument]
-async fn calculate_hash_wabbajack(path: PathBuf) -> Result<u64> {
+async fn calculate_hash_wabbajack(path: &ExistingPath) -> Result<u64> {
     let size = tokio::fs::metadata(&path)
         .await
         .context("no such file")?
         .len();
 
     let file_name = path
+        .as_path()
         .file_name()
-        .context("file must have a name")?
-        .to_string_lossy()
-        .to_string();
+        .context("file must have a name")?;
     tracing::Span::current().pipe(|pb| {
         pb.pb_set_style(&io_progress_style());
         pb.pb_set_length(size);
@@ -55,7 +56,7 @@ async fn calculate_hash_wabbajack(path: PathBuf) -> Result<u64> {
     });
 
     let mut file = tokio::fs::File::open(&path)
-        .map_with_context(|| format!("opening file [{}]", path.display()))
+        .map_with_context(|| format!("opening file [{}]", path))
         .await?
         .pipe(tokio::io::BufReader::new);
     let mut buffer = vec![0; crate::BUFFER_SIZE];
@@ -164,8 +165,8 @@ pub async fn validate_hash_sha512(path: PathBuf, expected_hash_str: &str) -> Res
         .with_context(|| format!("validating hash for [{}]", path.display()))
 }
 
-pub async fn validate_hash_wabbajack(path: PathBuf, expected_hash: String) -> Result<PathBuf> {
-    calculate_hash_wabbajack(path.clone())
+pub async fn validate_hash_wabbajack(path: ExistingPathBuf, expected_hash: String) -> Result<ExistingPathBuf> {
+    calculate_hash_wabbajack(&path)
         .map_ok(to_base_64_from_u64)
         .and_then(|hash| {
             hash.eq(&expected_hash)
@@ -174,10 +175,10 @@ pub async fn validate_hash_wabbajack(path: PathBuf, expected_hash: String) -> Re
                 .pipe(ready)
         })
         .await
-        .with_context(|| format!("validating hash for [{}]", path.display()))
+        .with_context(|| format!("validating hash for [{path}]"))
 }
 
-pub async fn validate_file_size(path: PathBuf, expected_size: u64) -> Result<PathBuf> {
+pub async fn validate_file_size(path: ExistingPathBuf, expected_size: u64) -> Result<ExistingPathBuf> {
     read_file_size(&path).await.and_then(move |found_size| {
         found_size
             .eq(&expected_size)
@@ -187,18 +188,18 @@ pub async fn validate_file_size(path: PathBuf, expected_size: u64) -> Result<Pat
 }
 
 impl DownloadCache {
-    pub fn download_output_path(&self, file_name: String) -> PathBuf {
-        self.root_directory.join(file_name)
+    pub fn download_output_path(&self, file_name: &str) -> Result<Utf8PlatformPathBuf> {
+        self.root_directory.join_new(file_name)
     }
-    pub async fn verify(self: Arc<Self>, descriptor: ArchiveDescriptor) -> Result<WithArchiveDescriptor<PathBuf>> {
+    pub async fn verify(self: Arc<Self>, descriptor: ArchiveDescriptor) -> Result<WithArchiveDescriptor<ExistingPathBuf>> {
         let ArchiveDescriptor { hash, meta: _, name, size } = descriptor.clone();
-        self.download_output_path(name)
-            .pipe(Ok)
+        self.download_output_path(&name)
             .pipe(ready)
-            .and_then(|expected_path| async move {
-                tokio::fs::try_exists(&expected_path)
-                    .map_with_context(|| format!("checking if path [{}] exists", expected_path.display()))
-                    .map_ok(|exists| exists.then_some(expected_path.clone()))
+            .and_then(async |expected_path| {
+                expected_path
+                    .case_insensitive_utf8()
+                    .pipe(ready)
+                    .and_then(async |expected_path| expected_path.exists_async().await)
                     .await
             })
             .and_then(|exists| match exists {

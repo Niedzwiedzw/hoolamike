@@ -1,21 +1,21 @@
 use {
     super::{ProcessArchive, *},
     crate::{
-        compression::case_insensitive_lookup::{case_insensitive_string::CaseInsensitiveString, CaseInsenitiveBasicListing},
+        compression::case_insensitive_lookup::CaseInsenitiveBasicListing,
+        path::{Path, PathBuf},
         utils::PathFileNameOrEmpty,
     },
     anyhow::{Context, Result},
     itertools::Itertools,
-    std::path::PathBuf,
 };
 
 pub type UnrarFile = tempfile::NamedTempFile;
 
 #[derive(Debug)]
-pub struct ArchiveHandle(PathBuf);
+pub struct ArchiveHandle(ExistingPathBuf);
 
 impl ArchiveHandle {
-    pub fn new(file: &Path) -> Result<Self> {
+    pub fn new(file: &ExistingPath) -> Result<Self> {
         unrar::Archive::new(file)
             .open_for_listing()
             .context("could not open archive for listing")
@@ -42,6 +42,7 @@ impl ArchiveHandle {
                     .filter_ok(|f| f.is_file())
                     .map(|f| f.context("bad file").map(|f| f.filename.clone()))
                     .process_results(|files| CaseInsenitiveBasicListing::from_paths(files))
+                    .flatten()
             })
     }
 }
@@ -49,7 +50,7 @@ impl ArchiveHandle {
 impl ProcessArchive for ArchiveHandle {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
         self.list_paths_with_originals()
-            .map(|l| l.keys().map(|k| k.as_path()).collect_vec())
+            .map(|l| l.into_iter().map(|(p, _)| p).collect_vec())
             .context("listing archive")
     }
 
@@ -70,17 +71,18 @@ impl ProcessArchive for ArchiveHandle {
                                 .and_then(|iterator| iterator.read_header().context("reading header"))?
                             {
                                 match validated_paths
-                                    .remove(
+                                    .remove_entry(
                                         &post_header
                                             .entry()
                                             .filename
-                                            .pipe_deref(CaseInsensitiveString::from_path),
+                                            .pipe_deref(PathBuf::from_path)
+                                            .context("bad entry")?,
                                     )
-                                    .map(|e| e.archive_path)
+                                    .map(|(e, _)| e)
                                 {
                                     None => iterator = Some(post_header.skip().context("skipping entry")?),
                                     Some(archive_path) => archive_path
-                                        .as_ref()
+                                        .as_path()
                                         .named_tempfile_with_context()
                                         .and_then(|file| {
                                             file.path()
@@ -101,7 +103,7 @@ impl ProcessArchive for ArchiveHandle {
                         .map(|paths| {
                             paths
                                 .into_iter()
-                                .map(|(path, file)| (path.as_path(), self::ArchiveFileHandle::Unrar(file)))
+                                .map(|(path, file)| (path, self::ArchiveFileHandle::Unrar(file)))
                                 .collect_vec()
                         })
                         .and_then(move |finished| {

@@ -1,6 +1,8 @@
 use {
     crate::modlist_json::{ArchiveDescriptor, HumanUrl},
+    case_insensitive_path::ExistingPathBuf,
     std::path::PathBuf,
+    typed_path::Utf8PlatformPathBuf,
 };
 
 pub mod gamefile_source_downloader;
@@ -18,9 +20,9 @@ pub struct WithArchiveDescriptor<T> {
     pub descriptor: ArchiveDescriptor,
 }
 
-pub type MergeDownloadTask = WithArchiveDescriptor<(Vec<HumanUrl>, PathBuf)>;
-pub type DownloadTask = WithArchiveDescriptor<(HumanUrl, PathBuf)>;
-pub type CopyFileTask = WithArchiveDescriptor<(PathBuf, PathBuf)>;
+pub type MergeDownloadTask = WithArchiveDescriptor<(Vec<HumanUrl>, Utf8PlatformPathBuf)>;
+pub type DownloadTask = WithArchiveDescriptor<(HumanUrl, Utf8PlatformPathBuf)>;
+pub type CopyFileTask = WithArchiveDescriptor<(ExistingPathBuf, Utf8PlatformPathBuf)>;
 
 #[derive(Debug, Clone, derive_more::From)]
 pub enum SyncTask {

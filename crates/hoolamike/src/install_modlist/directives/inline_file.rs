@@ -1,6 +1,6 @@
 use {
     super::*,
-    crate::{modlist_json::directive::InlineFileDirective, progress_bars_v2::IndicatifWrapIoExt},
+    crate::{modlist_json::directive::InlineFileDirective, progress_bars_v2::IndicatifWrapIoExt, utils::ExistingPathRead},
     std::io::Write,
     wabbajack_file_handle::WabbajackFileHandle,
 };
@@ -8,7 +8,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct InlineFileHandler {
     pub wabbajack_file: WabbajackFileHandle,
-    pub output_directory: PathBuf,
+    pub output_directory: ExistingPathBuf,
 }
 
 impl InlineFileHandler {
@@ -22,9 +22,16 @@ impl InlineFileHandler {
             to,
         }: InlineFileDirective,
     ) -> Result<u64> {
-        let output_path = self.output_directory.join(to.into_path());
+        let output_path = self
+            .output_directory
+            .case_insensitive()
+            .join_case_insensitive(to)
+            .context("building output path")?;
         let wabbajack_file = self.wabbajack_file.clone();
-        let output_file = create_file_all(&output_path)?;
+        let (_, output_file) = output_path
+            .as_path()
+            .open_file_write()
+            .context("creating output file")?;
 
         let archive = wabbajack_file;
         archive

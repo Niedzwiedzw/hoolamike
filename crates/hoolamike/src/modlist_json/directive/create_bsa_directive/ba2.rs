@@ -1,4 +1,4 @@
-use {super::*, crate::serde_type_guard, type_guard::WithTypeGuard};
+use {super::*, crate::serde_type_guard, case_insensitive_path::CaseInsensitivePathBuf, type_guard::WithTypeGuard};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -60,7 +60,7 @@ pub struct BA2DX10Entry {
     /// path: PathBuf
     /// Description: File system path to the file.
     /// Usage: Access the file during installation.
-    pub path: MaybeWindowsPath,
+    pub path: CaseInsensitivePathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -98,7 +98,7 @@ pub struct BA2FileEntry {
     /// path: PathBuf
     /// Description: File system path to the file.
     /// Usage: Access the file during installation.
-    pub path: MaybeWindowsPath,
+    pub path: CaseInsensitivePathBuf,
 }
 
 #[allow(clippy::large_enum_variant)]

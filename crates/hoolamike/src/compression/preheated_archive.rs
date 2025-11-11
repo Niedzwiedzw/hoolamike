@@ -1,24 +1,18 @@
 use {
-    super::{ProcessArchive, SeekWithTempFileExt},
-    crate::compression::ArchiveHandle,
-    anyhow::{Context, Result},
-    itertools::Itertools,
-    rayon::iter::{IntoParallelRefIterator, ParallelIterator},
-    std::{
+    super::{ProcessArchive, SeekWithTempFileExt}, crate::compression::ArchiveHandle, anyhow::{Context, Result}, case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath}, itertools::Itertools, rayon::iter::{IntoParallelRefIterator, ParallelIterator}, std::{
         collections::BTreeMap,
         path::{Path, PathBuf},
-    },
-    tap::prelude::*,
-    tempfile::TempPath,
+    }, tap::prelude::*, tempfile::TempPath
 };
+
 #[derive(Debug)]
 pub struct PreheatedArchive {
-    pub paths: BTreeMap<PathBuf, TempPath>,
+    pub paths: BTreeMap<CaseInsensitivePathBuf, TempPath>,
 }
 
 impl PreheatedArchive {
-    pub fn from_archive_concurrent(archive: &Path, chunk_size: usize) -> Result<Self> {
-        ArchiveHandle::with_guessed(archive, archive.extension(), |mut a| a.list_paths())
+    pub fn from_archive_concurrent(archive: &ExistingPath, chunk_size: usize) -> Result<Self> {
+        ArchiveHandle::with_guessed(archive, archive.as_path().extension(), |mut a| a.list_paths())
             .and_then(|paths| {
                 paths
                     .chunks(chunk_size)
@@ -26,9 +20,9 @@ impl PreheatedArchive {
                     .par_iter()
                     .copied()
                     .map(move |chunk| {
-                        ArchiveHandle::with_guessed(archive, archive.extension(), |mut archive| {
+                        ArchiveHandle::with_guessed(archive, archive.as_path().extension(), |mut archive| {
                             archive
-                                .get_many_handles(chunk.iter().map(|p| p.as_path()).collect_vec().as_slice())
+                                .get_many_handles(chunk.iter().collect_vec().as_slice())
                                 .context("getting many handles")
                         })
                         .and_then(|handles| {

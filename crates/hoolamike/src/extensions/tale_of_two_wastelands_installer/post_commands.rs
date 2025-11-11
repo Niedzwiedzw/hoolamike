@@ -52,11 +52,7 @@ impl ParsedPostCommand {
                     .inspect(|token| debug!(%token))
             };
             let assert_eq = async |a: String, b: &str| {
-                if a == b {
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!("[{a} != {b}]"))
-                }
+                if a == b { Ok(()) } else { Err(anyhow::anyhow!("[{a} != {b}]")) }
             };
             next(&mut parser, "cmd.exe")
                 .and_then(|a| assert_eq(a, "cmd.exe"))

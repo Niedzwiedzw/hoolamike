@@ -1,7 +1,11 @@
 use {
     super::{IteratorTryFlatMapExt, PathReadWrite},
-    crate::compression::{zip::ZipArchive, ArchiveFileHandle, ProcessArchive},
+    crate::{
+        compression::{ArchiveFileHandle, ProcessArchive, zip::ZipArchive},
+        utils::ExistingPathRead,
+    },
     anyhow::{Context, Result},
+    case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath, ExistingPathBuf},
     itertools::Itertools,
     parking_lot::Mutex,
     rayon::{iter::ParallelIterator, slice::ParallelSlice},
@@ -9,6 +13,7 @@ use {
         collections::BTreeMap,
         ops::Div,
         path::{Path, PathBuf},
+        str::FromStr,
         sync::Arc,
     },
     tap::prelude::*,
@@ -19,9 +24,9 @@ use {
 #[derive(Clone, derivative::Derivative)]
 #[derivative(Debug)]
 pub struct WabbajackFileHandle {
-    wabbajack_file_path: Arc<PathBuf>,
+    wabbajack_file_path: Arc<ExistingPathBuf>,
     #[derivative(Debug = "ignore")]
-    preloaded: Arc<Mutex<BTreeMap<PathBuf, TempPath>>>,
+    preloaded: Arc<Mutex<BTreeMap<CaseInsensitivePathBuf, TempPath>>>,
 }
 
 impl WabbajackFileHandle {
@@ -29,11 +34,10 @@ impl WabbajackFileHandle {
     pub fn get_source_data(&self, source_data_id: uuid::Uuid) -> Result<TempPath> {
         let mut preloaded = self.preloaded.lock();
         preloaded
-            .remove(Path::new(&source_data_id.as_hyphenated().to_string()))
+            .remove(&CaseInsensitivePathBuf::from_str(&source_data_id.as_hyphenated().to_string()).context("uuid to be a valid utf8 segment")?)
             .with_context(|| format!("no [{source_data_id:?}] inside wabbajack archive ({:#?})", preloaded.keys().collect_vec()))
     }
-    #[instrument]
-    pub(crate) fn from_archive(archive_path: PathBuf) -> Result<Self> {
+    pub(crate) fn from_archive(archive_path: &ExistingPath) -> Result<Self> {
         archive_path
             .open_file_read()
             .and_then(|(at_path, _file)| ZipArchive::new(&at_path).with_context(|| format!("opening archive at path [{at_path:#?}]")))
@@ -46,7 +50,6 @@ impl WabbajackFileHandle {
                         let chunk_size = paths.len().div(num_cpus::get()).clamp(1, 64);
                         paths
                             .iter()
-                            .map(|p| p.as_path())
                             .collect_vec()
                             .par_chunks(chunk_size)
                             .map(|chunk| {
@@ -79,7 +82,7 @@ impl WabbajackFileHandle {
             .map(Arc::new)
             .map(|preloaded| Self {
                 preloaded,
-                wabbajack_file_path: Arc::new(archive_path),
+                wabbajack_file_path: Arc::new(archive_path.into_owned()),
             })
     }
 }

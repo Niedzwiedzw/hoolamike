@@ -6,6 +6,7 @@ use {
         modlist_json::directive::PatchedFromArchiveDirective,
         progress_bars_v2::IndicatifWrapIoExt,
         read_wrappers::ReadExt,
+        utils::ExistingPathRead,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     std::io::{Read, Seek, Write},
@@ -17,7 +18,7 @@ use {
 pub struct PatchedFromArchiveHandler {
     #[derivative(Debug = "ignore")]
     pub wabbajack_file: WabbajackFileHandle,
-    pub output_directory: PathBuf,
+    pub output_directory: ExistingPathBuf,
     pub download_summary: DownloadSummary,
 }
 
@@ -41,7 +42,11 @@ impl PatchedFromArchiveHandler {
             .and_then(|path| preheated.get_archive(path))
             .with_context(|| format!("reading archive for [{archive_hash_path:?}]"))?;
 
-        let output_path = self.output_directory.join(to.into_path());
+        let output_path = self
+            .output_directory
+            .case_insensitive()
+            .join_case_insensitive(to)
+            .context("building output path")?;
 
         let wabbajack_file = self.wabbajack_file.clone();
         #[tracing::instrument(skip(source, delta, target), level = "INFO")]
@@ -77,13 +82,17 @@ impl PatchedFromArchiveHandler {
             .with_context(|| format!("patch {patch_id:?} does not exist"))?;
 
         source_file
-            .open_file_read()
+            .exists()
+            .and_then(|source_file| source_file.open_file_read())
             .and_then(|(final_source_path, mut final_source)| {
-                create_file_all(&output_path).and_then(|mut output_file| {
-                    perform_copy(&mut final_source, delta_file, &mut output_file, size, hash)
-                        .with_context(|| format!("when extracting from [{final_source_path:?}] to [{output_path:?}]"))
-                        .with_context(|| format!("when handling [{archive_hash_path:?}] copy"))
-                })
+                output_path
+                    .as_path()
+                    .open_file_write()
+                    .and_then(|(output_path, mut output_file)| {
+                        perform_copy(&mut final_source, delta_file, &mut output_file, size, hash)
+                            .with_context(|| format!("when extracting from [{final_source_path:?}] to [{output_path:?}]"))
+                            .with_context(|| format!("when handling [{archive_hash_path:?}] copy"))
+                    })
             })
             .map(|_| size)
     }

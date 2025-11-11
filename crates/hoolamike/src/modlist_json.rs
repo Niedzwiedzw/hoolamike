@@ -1,5 +1,6 @@
 use {
-    crate::{install_modlist::download_cache::to_base_64_from_u64, utils::MaybeWindowsPath},
+    crate::install_modlist::download_cache::to_base_64_from_u64,
+    case_insensitive_path::CaseInsensitivePathBuf,
     serde::{Deserialize, Serialize},
     std::hash::Hasher,
     tap::prelude::*,
@@ -217,7 +218,7 @@ pub struct MegaState {
 pub struct GameFileSourceState {
     pub game_version: String,
     pub hash: String,
-    pub game_file: MaybeWindowsPath,
+    pub game_file: CaseInsensitivePathBuf,
     pub game: GameName,
 }
 

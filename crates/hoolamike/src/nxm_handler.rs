@@ -2,25 +2,26 @@ use {
     crate::{
         config_file::{HoolamikeConfig, InstallationConfig},
         downloaders::{
-            nexus::{DownloadFileRequest, NexusDownloader},
             DownloadTask,
             WithArchiveDescriptor,
+            nexus::{DownloadFileRequest, NexusDownloader},
         },
         install_modlist::{
             download_cache::DownloadCache,
-            downloads::{stream_file, HTTP_CLIENT},
+            downloads::{HTTP_CLIENT, stream_file},
         },
         modlist_json::{Archive, HumanUrl, Modlist, State},
+        path::PathExistsUtf8Ext,
         progress_bars_v2::io_progress_style,
-        utils::{spawn_rayon, Obfuscated},
+        utils::{Obfuscated, spawn_rayon},
         wabbajack_file::WabbajackFile,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     cli::HandleNxmCli,
     futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt},
     indicatif::ProgressBar,
     itertools::Itertools,
-    notify::{event::CreateKind, Watcher},
+    notify::{Watcher, event::CreateKind},
     serde::{Deserialize, Serialize},
     single_instance_server::listen_for_nxm_links,
     std::{collections::HashMap, convert::identity, future::ready, path::PathBuf, sync::Arc},
@@ -151,7 +152,10 @@ pub async fn run(
                     wabbajack_entries: _,
                     modlist: Modlist { archives, .. },
                 },
-            ) = spawn_rayon(move || WabbajackFile::load_wabbajack_file(wabbajack_file_path))
+            ) = wabbajack_file_path
+                .exists_utf8()
+                .pipe(ready)
+                .and_then(|wabbajack_file_path| spawn_rayon(move || WabbajackFile::load_wabbajack_file(&wabbajack_file_path)))
                 .await
                 .context("loading modlist file")
                 .tap_ok(|(_, wabbajack)| {
@@ -178,7 +182,7 @@ pub async fn run(
                 })
                 .context("extracting specified wabbajack file")?;
 
-            let download_cache = DownloadCache::new(downloaders.downloads_directory)
+            let download_cache = downloaders.downloads_directory.pipe(Utf8TypedPa) DownloadCache::new(downloaders.downloads_directory)
                 .context("initializing download cache")
                 .map(Arc::new)?;
 
@@ -403,11 +407,11 @@ pub mod single_instance_server {
         crate::modlist_json::HumanUrl,
         anyhow::{Context, Result},
         axum::{
+            Json,
+            Router,
             extract::State,
             response::{Html, IntoResponse},
             routing::post,
-            Json,
-            Router,
         },
         futures::{FutureExt, Stream, StreamExt, TryFutureExt},
         reqwest::StatusCode,

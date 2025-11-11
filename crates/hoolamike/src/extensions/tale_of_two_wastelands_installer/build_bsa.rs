@@ -1,13 +1,18 @@
 use {
     super::*,
-    crate::{install_modlist::directives::create_bsa::tes_4::*, modlist_json::directive::create_bsa_directive::bsa::FileStateData},
+    crate::{
+        install_modlist::directives::create_bsa::tes_4::*, modlist_json::directive::create_bsa_directive::bsa::FileStateData, path::CaseInsensitivePathBuf,
+        utils::ExistingPathRead,
+    },
     anyhow::{Context, Result},
     ba2::tes4::*,
+    case_insensitive_path::Utf8TypedPathToPlatformExt,
+    std::str::FromStr,
     tracing::trace,
 };
 
 #[instrument(skip(handle_archive, file_states), fields(files=file_states.len()))]
-pub fn build_bsa<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) -> Result<()>>(
+pub fn build_bsa<F: FnOnce(&Archive<'_>, ArchiveOptions, CaseInsensitivePathBuf) -> Result<()>>(
     LazyArchive {
         files: file_states,
         archive_metadata:
@@ -22,7 +27,7 @@ pub fn build_bsa<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) -> Re
     }: LazyArchive,
     handle_archive: F,
 ) -> Result<()> {
-    let output_archive_file = MaybeWindowsPath(value);
+    let output_archive_file = CaseInsensitivePathBuf::from_str(&value).context("bad output_archive_file")?;
     let version = Version::FNV;
     let archive_flags = ArchiveFlags::from_bits(archive_flags as _).with_context(|| format!("invalid flags: {archive_flags:b}"))?;
     let archive_types = ArchiveTypes::from_bits(files_flags).with_context(|| format!("invalid file flags: {files_flags:b}"))?;
@@ -43,7 +48,6 @@ pub fn build_bsa<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) -> Re
             file_states
                 .into_par_iter()
                 .map(move |(archive_path, file)| {
-                    let archive_path = MaybeWindowsPath(archive_path.display().to_string());
                     info_span!("handle_file_state", %archive_path).in_scope(|| {
                         trace!("opening file");
                         file.pipe(|path| path.open_file_read())
@@ -58,7 +62,13 @@ pub fn build_bsa<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) -> Re
                                 )
                                 .with_context(|| format!("loading file at [{path:?}]"))
                             })
-                            .and_then(|file| create_key(archive_path).map(|key| (key, file)))
+                            .and_then(|file| {
+                                archive_path
+                                    .as_original_path()
+                                    .into_windows_encoding_checked()
+                                    .and_then(|archive_path| create_key(&archive_path))
+                                    .map(|key| (key, file))
+                            })
                     })
                 })
                 .inspect(|_| reading_bsa_entries.pb_inc(1))

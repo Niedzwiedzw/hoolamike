@@ -1,6 +1,6 @@
 use {
     anyhow::{Context, Result},
-    ba2::{fo4::FileWriteOptions, ByteSlice, Reader},
+    ba2::{ByteSlice, Reader, fo4::FileWriteOptions},
     clap::{Parser, Subcommand},
     std::path::{Path, PathBuf},
     tap::prelude::*,

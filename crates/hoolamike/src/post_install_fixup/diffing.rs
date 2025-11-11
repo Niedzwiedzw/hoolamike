@@ -1,5 +1,5 @@
 use {
-    console::{style, Style},
+    console::{Style, style},
     similar::{ChangeTag, TextDiff},
     std::fmt,
     tap::prelude::*,

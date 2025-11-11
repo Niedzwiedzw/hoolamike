@@ -3,25 +3,28 @@ use {
     crate::{
         config_file::{DownloadersConfig, GamesConfig},
         downloaders::{
-            gamefile_source_downloader::{get_game_file_source_synchronizers, GameFileSourceSynchronizers},
-            helpers::FutureAnyhowExt,
-            mediafire::MediaFireDownloader,
-            nexus::{self, NexusDownloader},
-            wabbajack_cdn::WabbajackCDNDownloader,
             CopyFileTask,
             DownloadTask,
             MergeDownloadTask,
             SyncTask,
             WithArchiveDescriptor,
+            gamefile_source_downloader::{GameFileSourceSynchronizers, get_game_file_source_synchronizers},
+            helpers::FutureAnyhowExt,
+            mediafire::MediaFireDownloader,
+            nexus::{self, NexusDownloader},
+            wabbajack_cdn::WabbajackCDNDownloader,
         },
         error::{MultiErrorCollectExt, TotalResult},
         modlist_json::{Archive, GoogleDriveState, HttpState, HumanUrl, ManualState, MediaFireState, MegaState, State},
+        path::CaseInsensitivePathBuf,
         progress_bars_v2::IndicatifWrapIoExt,
     },
     anyhow::Result,
+    case_insensitive_path::{ExistingPath, ExistingPathBuf},
     futures::{FutureExt, StreamExt, TryStreamExt},
     std::{collections::HashMap, path::PathBuf, sync::Arc},
-    tracing::{debug, instrument, Instrument},
+    tracing::{Instrument, debug, instrument},
+    typed_path::Utf8PlatformPathBuf,
 };
 
 pub static HTTP_CLIENT: std::sync::LazyLock<reqwest::Client> = {
@@ -65,83 +68,18 @@ enum Either<L, R> {
 }
 
 #[instrument]
-async fn copy_local_file(from: PathBuf, to: PathBuf, expected_size: u64) -> Result<PathBuf> {
-    let mut source_file = tokio::fs::OpenOptions::new()
-        .read(true)
-        .open(&from)
-        .map_with_context(|| format!("opening [{}]", from.display()))
-        .or_else(|error| {
-            tracing::warn_span!("could not find [{from:?}], trying case insensitive?", reason = format!("{error:?}"))
-                .in_scope(|| {
-                    tokio::task::block_in_place(|| {
-                        from.file_name()
-                            .context("no file name")
-                            .and_then(|name| {
-                                name.to_str()
-                                    .context("filename is not a utf8 string")
-                                    .map(|file_name| file_name.to_lowercase())
-                            })
-                            .and_then(|file_name| {
-                                from.parent()
-                                    .with_context(|| format!("[{from:?}] has no parent"))
-                                    .and_then(|parent| {
-                                        parent
-                                            .read_dir()
-                                            .context("reading directory")
-                                            .and_then(|dir| {
-                                                dir.into_iter()
-                                                    .map(|dir| {
-                                                        dir.context("reading entry")
-                                                            .and_then(|entry| {
-                                                                entry
-                                                                    .file_name()
-                                                                    .into_string()
-                                                                    .map_err(|name| {
-                                                                        anyhow::anyhow!("entry [{entry:?}] ([{name:?}]) is not a valid utf8 string")
-                                                                    })
-                                                                    .map(|name| (name, entry))
-                                                            })
-                                                            .map(|(filename, entry)| (filename.to_lowercase(), entry.path().to_owned()))
-                                                    })
-                                                    .collect::<Result<HashMap<_, _>>>()
-                                                    .with_context(|| format!("when listing [{parent:?}]"))
-                                            })
-                                            .and_then(|mut paths| {
-                                                paths.remove(&file_name).with_context(|| {
-                                                    format!(
-                                                        "no [{file_name}] in [{parent:?}] (looking up by lowercase filename, and choices are:\n[{paths:#?}])"
-                                                    )
-                                                })
-                                            })
-                                    })
-                            })
-                    })
-                })
-                .pipe(ready)
-                .and_then(|lowercase| async move {
-                    tokio::fs::OpenOptions::new()
-                        .read(true)
-                        .open(lowercase.clone())
-                        .map_with_context({
-                            cloned![lowercase];
-                            move || format!("opening lowercase file that matched the path: [{lowercase:?}]")
-                        })
-                        .await
-                        .tap_ok(|_| {
-                            tracing::warn!(
-                                "opened file matched by lowercase filename: [{lowercase:?}]. this is guesswork at this point, if this approach doesn't work \
-                                 file an issue"
-                            )
-                        })
-                })
-        })
-        .await?;
+async fn copy_local_file(from: ExistingPathBuf, to: Utf8PlatformPathBuf, expected_size: u64) -> Result<ExistingPathBuf> {
+    let (from, mut source_file) = from
+        .open_file_read_async()
+        .await
+        .context("looking up loading existing file")?;
+
     let target_file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(&to)
-        .map_with_context(|| format!("opening [{}]", to.display()))
+        .map_with_context(|| format!("opening [{}]", to))
         .await?;
 
     let copied = tokio::io::copy(&mut source_file, &mut tracing::Span::current().wrap_async_write(expected_size, target_file))
@@ -151,22 +89,22 @@ async fn copy_local_file(from: PathBuf, to: PathBuf, expected_size: u64) -> Resu
     if copied != expected_size {
         anyhow::bail!("[{from:?} -> {to:?}] local copy finished, but received unexpected size (expected [{expected_size}] bytes, downloaded [{copied} bytes])")
     }
-    Ok(to)
+    to.exists_utf8_async().await
 }
 
 #[instrument(skip(from), fields(chunks=%from.len()))]
-pub async fn stream_merge_file(from: Vec<HumanUrl>, to: PathBuf, expected_size: u64) -> Result<PathBuf> {
+pub async fn stream_merge_file(from: Vec<HumanUrl>, to: Utf8PlatformPathBuf, expected_size: u64) -> Result<ExistingPathBuf> {
     stream_merge_file_validate(from, to, Some(expected_size)).await
 }
 
 #[instrument(level = "DEBUG")]
-pub async fn stream_merge_file_validate(from: Vec<HumanUrl>, to: PathBuf, expected_size: Option<u64>) -> Result<PathBuf> {
+pub async fn stream_merge_file_validate(from: Vec<HumanUrl>, to: Utf8PlatformPathBuf, expected_size: Option<u64>) -> Result<ExistingPathBuf> {
     let target_file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(&to)
-        .map_with_context(|| format!("opening [{}]", to.display()))
+        .map_with_context(|| format!("opening [{}]", to))
         .await?;
 
     let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size.unwrap_or(0), target_file);
@@ -184,7 +122,7 @@ pub async fn stream_merge_file_validate(from: Vec<HumanUrl>, to: PathBuf, expect
                     downloaded += chunk.len() as u64;
                     tokio::io::copy(&mut chunk.as_ref(), &mut writer)
                         .await
-                        .with_context(|| format!("writing to fd {}", to.display()))?;
+                        .with_context(|| format!("writing to fd {}", to))?;
                 }
                 Err(message) => Err(message)?,
             }
@@ -197,22 +135,22 @@ pub async fn stream_merge_file_validate(from: Vec<HumanUrl>, to: PathBuf, expect
         }
     }
 
-    Ok(to)
+    to.exists_utf8_async().await
 }
 
 #[instrument]
-pub async fn stream_file(from: HumanUrl, to: PathBuf, expected_size: u64) -> Result<PathBuf> {
+pub async fn stream_file(from: HumanUrl, to: Utf8PlatformPathBuf, expected_size: u64) -> Result<ExistingPathBuf> {
     stream_file_validate(from, to, Some(expected_size)).await
 }
 
 #[instrument]
-pub async fn stream_file_validate(from: HumanUrl, to: PathBuf, expected_size: Option<u64>) -> Result<PathBuf> {
+pub async fn stream_file_validate(from: HumanUrl, to: Utf8PlatformPathBuf, expected_size: Option<u64>) -> Result<ExistingPathBuf> {
     let target_file = tokio::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(&to)
-        .map_with_context(|| format!("opening [{}]", to.display()))
+        .map_with_context(|| format!("opening [{}]", to))
         .await?;
     let mut writer = &mut tracing::Span::current().wrap_async_write(expected_size.unwrap_or(0), tokio::io::BufWriter::new(target_file));
     let mut byte_stream = HTTP_CLIENT
@@ -229,7 +167,7 @@ pub async fn stream_file_validate(from: HumanUrl, to: PathBuf, expected_size: Op
 
                 tokio::io::copy(&mut chunk.as_ref(), &mut writer)
                     .await
-                    .with_context(|| format!("writing to fd {}", to.display()))?;
+                    .with_context(|| format!("writing to fd {}", to))?;
             }
             Err(message) => Err(message)?,
         }
@@ -240,13 +178,18 @@ pub async fn stream_file_validate(from: HumanUrl, to: PathBuf, expected_size: Op
         }
     }
 
-    Ok(to)
+    to.exists_utf8_async().await
 }
 impl Synchronizers {
     pub fn new(config: DownloadersConfig, games_config: GamesConfig) -> Result<Self> {
         Ok(Self {
             config: Arc::new(config.clone()),
-            cache: Arc::new(download_cache::DownloadCache::new(config.downloads_directory.clone()).context("building download cache")?),
+            cache: config
+                .downloads_directory
+                .utf8_platform_path()
+                .and_then(download_cache::DownloadCache::new)
+                .map(Arc::new)
+                .context("building downloads cache")?,
             inner: DownloadersInner::new(config).context("building downloaders")?,
             game_synchronizers: Arc::new(get_game_file_source_synchronizers(games_config).context("building game file source synchronizers")?),
         })
@@ -262,16 +205,24 @@ impl Synchronizers {
                 .pipe(ready)
                 .and_then(|nexus| nexus.download(nexus::DownloadFileRequest::from_nexus_state(nexus_state)))
                 .await
-                .map(|url| DownloadTask {
-                    inner: (url, self.cache.download_output_path(descriptor.name.clone())),
-                    descriptor,
+                .and_then(|url| {
+                    self.cache
+                        .download_output_path(&descriptor.name)
+                        .map(|name| DownloadTask {
+                            inner: (url, name),
+                            descriptor,
+                        })
                 })
                 .map(SyncTask::from),
             State::GoogleDrive(GoogleDriveState { id }) => crate::downloaders::google_drive::GoogleDriveDownloader::download(id, descriptor.size)
                 .await
-                .map(|url| DownloadTask {
-                    inner: (url, self.cache.download_output_path(descriptor.name.clone())),
-                    descriptor,
+                .and_then(|url| {
+                    self.cache
+                        .download_output_path(descriptor.name.as_str())
+                        .map(|name| DownloadTask {
+                            inner: (url, name),
+                            descriptor,
+                        })
                 })
                 .map(SyncTask::from),
             State::GameFileSource(state) => self
@@ -281,25 +232,36 @@ impl Synchronizers {
                 .pipe(ready)
                 .and_then(|synchronizer| synchronizer.prepare_copy(state))
                 .await
-                .map(|source_path| CopyFileTask {
-                    inner: (source_path, self.cache.download_output_path(descriptor.name.clone())),
-                    descriptor,
+                .and_then(|source_path| {
+                    self.cache
+                        .download_output_path(descriptor.name.as_str())
+                        .map(|name| CopyFileTask {
+                            inner: (source_path, name),
+                            descriptor,
+                        })
                 })
                 .map(SyncTask::from),
 
             State::Http(HttpState { url, headers: _ }) => url
-                .pipe(|url| DownloadTask {
-                    inner: (url, self.cache.download_output_path(descriptor.name.clone())),
-                    descriptor,
+                .pipe(|url| {
+                    self.cache
+                        .download_output_path(descriptor.name.as_str())
+                        .map(|name| DownloadTask {
+                            inner: (url, name),
+                            descriptor,
+                        })
                 })
-                .pipe(SyncTask::from)
-                .pipe(Ok),
+                .map(SyncTask::from),
             State::WabbajackCDN(state) => WabbajackCDNDownloader::prepare_download(state)
                 .await
                 .context("fetching from wabbajack cdn")
-                .map(|source_urls| MergeDownloadTask {
-                    inner: (source_urls, self.cache.download_output_path(descriptor.name.clone())),
-                    descriptor,
+                .and_then(|source_urls| {
+                    self.cache
+                        .download_output_path(descriptor.name.as_str())
+                        .map(|name| MergeDownloadTask {
+                            inner: (source_urls, name),
+                            descriptor,
+                        })
                 })
                 .map(SyncTask::from),
             State::Manual(ManualState { prompt, url }) => Err(anyhow::anyhow!("Manual action is required:\n\nURL: {url}\n{prompt}")),
@@ -311,9 +273,13 @@ impl Synchronizers {
                 MediaFireDownloader::download(url.clone())
                     .await
                     .context("mediafire")
-                    .map(|url| DownloadTask {
-                        inner: (url, self.cache.download_output_path(descriptor.name.clone())),
-                        descriptor,
+                    .and_then(|url| {
+                        self.cache
+                            .download_output_path(descriptor.name.as_str())
+                            .map(|name| DownloadTask {
+                                inner: (url, name),
+                                descriptor,
+                            })
                     })
                     .map(SyncTask::from)
                     .with_context(|| format!("Manual action is required:\n\nURL: {url}\nGo to the website and download the file(s) manually"))
@@ -323,7 +289,7 @@ impl Synchronizers {
     }
 
     #[instrument(skip_all, fields(archives=%archives.len()))]
-    pub async fn sync_downloads(self, archives: Vec<Archive>) -> TotalResult<WithArchiveDescriptor<PathBuf>> {
+    pub async fn sync_downloads(self, archives: Vec<Archive>) -> TotalResult<WithArchiveDescriptor<ExistingPathBuf>> {
         let base_concurrency = 7;
         let sync_downloads = tracing::Span::current().tap(|pb| {
             pb.pb_set_length(archives.iter().map(|a| a.descriptor.size).sum());

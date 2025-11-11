@@ -1,5 +1,6 @@
 use {
     crate::{
+        DebugHelpers,
         config_file::{HoolamikeConfig, InstallationConfig},
         consts::TEMP_FILE_DIR,
         downloaders::WithArchiveDescriptor,
@@ -9,16 +10,17 @@ use {
         progress_bars_v2::io_progress_style,
         tokio_runtime_multi,
         wabbajack_file::WabbajackFile,
-        DebugHelpers,
     },
     anyhow::Context,
-    directives::{concurrency, transformed_texture::TexconvWineState, DirectivesHandler, DirectivesHandlerConfig},
+    case_insensitive_path::PathExistsUtf8Ext,
+    directives::{DirectivesHandler, DirectivesHandlerConfig, concurrency, transformed_texture::TexconvWineState},
     download_cache::validate_hash_sha512,
-    downloads::{stream_file_validate, Synchronizers},
+    downloads::{Synchronizers, stream_file_validate},
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
+    rayon::iter::{IntoParallelIterator, ParallelIterator},
     std::{future::ready, path::Path, sync::Arc},
-    tap::prelude::*,
+    tap::{Pipe, Tap, TapFallible},
     tokio_stream::StreamExt,
     tracing::{info, info_span, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
@@ -128,7 +130,9 @@ pub fn install_modlist(
             wabbajack_entries: _,
             modlist,
         },
-    ) = WabbajackFile::load_wabbajack_file(wabbajack_file_path)
+    ) = wabbajack_file_path
+        .exists_utf8()
+        .and_then(|wabbajack_file_path| WabbajackFile::load_wabbajack_file(&wabbajack_file_path))
         .context("loading modlist file")
         .tap_ok(|(_, wabbajack)| {
             // PROGRESS
@@ -198,13 +202,23 @@ pub fn install_modlist(
                     .map_err(|e| vec![e])
                     .and_then(|r| r.block_on(tasks))
             })
+            .and_then(|summary| {
+                // TODO: don't validate, just use the information that file was succesfully downloaded
+                summary
+                    .into_par_iter()
+                    .map(|summary| summary.try_map_t(|p| p.exists_utf8()))
+                    .collect::<Vec<_>>()
+                    .pipe(|v| v.into_iter().collect::<anyhow::Result<Vec<_>>>())
+                    .context("doing one last existance check")
+                    .map_err(|e| vec![e])
+            })
             .and_then({
                 move |summary| {
                     tracing::Span::current().pb_inc(summary.iter().map(|d| d.descriptor.size).sum());
                     games
                         .get(&game_type)
                         .with_context(|| format!("[{game_type}] not found in {:?}", games.keys().collect::<Vec<_>>()))
-                        .map(|game_config| {
+                        .and_then(|game_config| {
                             DirectivesHandler::new(
                                 DirectivesHandlerConfig {
                                     wabbajack_file: wabbajack_file_handle,

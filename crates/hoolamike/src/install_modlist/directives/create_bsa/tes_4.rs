@@ -1,24 +1,24 @@
 use {
-    super::{count_progress_style, PathReadWrite},
+    super::count_progress_style,
     crate::{
         modlist_json::{
             directive::create_bsa_directive::bsa::{self, Bsa, DirectiveStateData, FileStateData},
             type_guard::WithTypeGuard,
         },
-        utils::MaybeWindowsPath,
+        utils::ExistingPathRead,
     },
     anyhow::{Context, Result},
     ba2::{
+        Borrowed, CompressionResult, ReaderWithOptions,
         tes4::{Archive, ArchiveFlags, ArchiveKey, ArchiveOptions, ArchiveTypes, Directory, DirectoryKey, File, FileReadOptions, Version},
-        Borrowed,
-        CompressionResult,
-        ReaderWithOptions,
     },
+    case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath, IntoUtf8CaseInsensitivePath, Utf8TypedPathToPlatformExt},
     rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
-    std::{ffi::OsStr, path::PathBuf},
+    std::path::PathBuf,
     tap::prelude::*,
     tracing::{debug, info_span, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
+    typed_path::Utf8WindowsPath,
 };
 
 #[derive(Debug)]
@@ -67,59 +67,35 @@ impl LazyArchiveFile<FileStateData> {
 }
 
 #[instrument]
-pub fn create_key<'a>(path: MaybeWindowsPath) -> Result<(ArchiveKey<'a>, DirectoryKey<'a>)> {
-    // path.0
-    //     .into_bytes()
-    //     .conv::<BString>()
-    //     .conv::<ArchiveKey>()
-    //     .pipe(Ok)
-    let join_delimiter = None
-        .or_else(|| path.0.contains(r#"\\"#).then_some(r#"\\"#))
-        .or_else(|| path.0.contains(r#"/"#).then_some(r#"/"#))
-        .or_else(|| path.0.contains(r#"\"#).then_some(r#"\"#))
-        .unwrap_or("/");
-
-    path.into_path().pipe_ref(|path| {
-        path.file_name()
-            .context("path has no file name at the end")
-            .and_then(|directory_key| {
-                path.parent()
-                    .context("cannot insert files at root, right?")
-                    .and_then(|archive_key| {
-                        (
-                            archive_key
-                                .iter()
-                                .map(|os_str| os_str.to_owned())
-                                .reduce(|mut acc, next| {
-                                    acc.push(join_delimiter.pipe(OsStr::new));
-                                    acc.push(next);
-                                    acc
-                                })
-                                .context("empty path?")
-                                .map(|path| {
-                                    path.tap(|path| {
-                                        tracing::debug!("deriving archive key  for {path:?}");
-                                    })
-                                    .as_encoded_bytes()
-                                    .conv::<ArchiveKey>()
-                                })
-                                .context("encoding directory key")?,
-                            directory_key
-                                .tap(|directory_key| {
-                                    tracing::debug!("deriving direcotry key for {directory_key:?}");
-                                })
-                                .as_encoded_bytes()
-                                .conv::<DirectoryKey>(),
-                        )
-                            .pipe(Ok)
-                    })
-            })
-    })
+pub fn create_key<'a>(path: &Utf8WindowsPath) -> Result<(ArchiveKey<'a>, DirectoryKey<'a>)> {
+    path.file_name()
+        .context("path has no file name at the end")
+        .and_then(|directory_key| {
+            path.parent()
+                .context("cannot insert files at root, right?")
+                .map(|archive_key| {
+                    (
+                        archive_key.pipe(|path| {
+                            path.tap(|path| {
+                                tracing::debug!("deriving archive key  for {path:?}");
+                            })
+                            .as_str()
+                            .conv::<ArchiveKey>()
+                        }),
+                        directory_key
+                            .tap(|directory_key| {
+                                tracing::debug!("deriving direcotry key for {directory_key:?}");
+                            })
+                            .conv::<DirectoryKey>(),
+                    )
+                })
+        })
+        .with_context(|| format!("reading archive key and directory key for `{path}`"))
 }
 
 #[instrument(skip(handle_archive, file_states))]
-pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) -> Result<()>>(
-    temp_bsa_dir: PathBuf,
+pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, CaseInsensitivePathBuf) -> Result<()>>(
+    temp_bsa_dir: &ExistingPath,
     Bsa {
         hash: _,
         size: _,
@@ -158,7 +134,10 @@ pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) 
         ArchiveTypes::from_bits(file_flags).with_context(|| format!("invalid file flags: {file_flags:b}"))?
     };
 
-    let temp_id_dir = temp_bsa_dir.join(temp_id);
+    let temp_id_dir = temp_bsa_dir
+        .join_checked(&temp_id)
+        .map(|temp_id| temp_id.case_insensitive())
+        .context("validaing temp id dir")?;
     let reading_bsa_entries = info_span!("creating_bsa_entries", count=%file_states.len())
         .entered()
         .tap(|pb| {
@@ -170,10 +149,18 @@ pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) 
         .map(move |WithTypeGuard { inner: file_state_data, .. }| {
             info_span!("handle_file_state", ?file_state_data).in_scope(|| {
                 temp_id_dir
-                    .join(file_state_data.path.clone().into_path())
-                    .pipe(|path| path.open_file_read())
+                    .join_case_insensitive(file_state_data.path.clone())
+                    .and_then(|path| path.try_exists())
+                    .and_then(|path| path.open_file_read())
                     .and_then(|(path, file)| LazyArchiveFile::new(&file, file_state_data.clone()).with_context(|| format!("loading file at [{path:?}]")))
-                    .and_then(|file| create_key(file_state_data.path).map(|key| (key, file)))
+                    .and_then(|file| {
+                        file_state_data
+                            .path
+                            .as_original_path()
+                            .into_windows_encoding_checked()
+                            .and_then(|path| create_key(path.as_path()))
+                            .map(|key| (key, file))
+                    })
             })
         })
         .inspect(|_| reading_bsa_entries.pb_inc(1))

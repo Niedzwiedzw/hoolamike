@@ -3,18 +3,19 @@ use {
     crate::{
         compression::case_insensitive_lookup::CaseInsensitiveArchiveListing,
         install_modlist::directives::IteratorTryFlatMapExt,
+        path::{Path, PathBuf},
         progress_bars_v2::count_progress_style,
-        utils::PathFileNameOrEmpty,
+        utils::{BTreeSetRemoveEntryExt, PathFileNameOrEmpty},
     },
     itertools::Itertools,
     sevenz_rust2::{BlockDecoder, Password},
     std::{
         borrow::Cow,
-        collections::BTreeMap,
+        collections::BTreeSet,
         fs::File,
         io::{BufWriter, Read},
         ops::Not,
-        path::PathBuf,
+        str::FromStr,
     },
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
@@ -69,17 +70,15 @@ impl ::sevenz_rust2::Archive {
                     .map(|block_index| (e.name.clone(), block_index))
             })
             .process_results(|entries| CaseInsensitiveArchiveListing::from_string_paths_extra(entries))
+            .flatten()
     }
 }
 
 impl ProcessArchive for SevenZipArchive {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
-        self.archive.list_paths_with_originals().map(|paths| {
-            paths
-                .into_iter()
-                .map(|(path, _)| path.as_path())
-                .collect::<Vec<_>>()
-        })
+        self.archive
+            .list_paths_with_originals()
+            .map(|paths| paths.into_iter().map(|(path, _)| path).collect::<Vec<_>>())
     }
 
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
@@ -92,22 +91,19 @@ impl ProcessArchive for SevenZipArchive {
                     pb.pb_set_length(extract_list.len() as _);
                 });
 
+                fn to_sevenz_error(e: anyhow::Error) -> sevenz_rust2::Error {
+                    let error = Cow::Owned(format!("{e:?}"));
+                    sevenz_rust2::Error::Io(std::io::Error::other(e), error)
+                }
+
                 extract_list
                     .into_iter()
                     .pipe(|extract_list| {
                         extract_list
-                            .sorted_unstable_by_key(|entry| entry.extra_value)
-                            .chunk_by(|entry| entry.extra_value)
+                            .sorted_unstable_by_key(|(_entry, idx)| *idx)
+                            .chunk_by(|(_entry, idx)| *idx)
                             .into_iter()
-                            .map(|(block_idx, chunk)| {
-                                (
-                                    block_idx,
-                                    chunk
-                                        .into_iter()
-                                        .map(|e| (e.archive_path.clone(), e))
-                                        .collect::<BTreeMap<_, _>>(),
-                                )
-                            })
+                            .map(|(block_idx, chunk)| (block_idx, chunk.into_iter().map(|(e, _)| e).collect::<BTreeSet<_>>()))
                             .collect_vec()
                             .into_iter()
                             .map(|(block_idx, mut lookup)| {
@@ -115,53 +111,54 @@ impl ProcessArchive for SevenZipArchive {
                                 let block = BlockDecoder::new(1, block_idx, &self.archive, no_password(), &mut self.file);
 
                                 block
-                                    .for_each_entries(&mut |entry, reader| match lookup
-                                        .remove(&entry.name.clone().into())
-                                        .map(|e| e.requested_path.to_owned())
-                                    {
-                                        Some(original_file_path) => entry.size().pipe(|expected_size| {
-                                            let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
-                                            original_file_path
-                                                .as_ref()
-                                                .named_tempfile_with_context()
-                                                .and_then(|mut output_file| {
-                                                    #[allow(clippy::let_and_return)]
-                                                    {
-                                                        let result = std::io::copy(
-                                                            &mut span.wrap_read(expected_size as _, reader),
-                                                            &mut BufWriter::new(&mut output_file),
-                                                        )
-                                                        .context("extracting into temp file");
-                                                        result
-                                                    }
-                                                    .and_then(|wrote| {
-                                                        output_file
-                                                            .flush()
-                                                            .context("flushing")
-                                                            .and_then(|_| output_file.rewind().context("rewinding output file"))
-                                                            .and_then(|_| {
-                                                                wrote
-                                                                    .eq(&expected_size)
-                                                                    .then_some(output_file)
-                                                                    .with_context(|| format!("expected [{expected_size}], found [{wrote}]"))
+                                    .for_each_entries(&mut |entry, reader| {
+                                        entry
+                                            .name
+                                            .pipe_deref(CaseInsensitivePathBuf::from_str)
+                                            .context("bad entry within archive")
+                                            .map_err(to_sevenz_error)
+                                            .and_then(|entry_name| match lookup.remove_entry(entry_name) {
+                                                Some(original_file_path) => entry.size().pipe(|expected_size| {
+                                                    let span = info_span!("extracting_file", archive_path=%entry.name, ?original_file_path);
+                                                    original_file_path
+                                                        .as_path()
+                                                        .named_tempfile_with_context()
+                                                        .and_then(|mut output_file| {
+                                                            #[allow(clippy::let_and_return)]
+                                                            {
+                                                                let result = std::io::copy(
+                                                                    &mut span.wrap_read(expected_size as _, reader),
+                                                                    &mut BufWriter::new(&mut output_file),
+                                                                )
+                                                                .context("extracting into temp file");
+                                                                result
+                                                            }
+                                                            .and_then(|wrote| {
+                                                                output_file
+                                                                    .flush()
+                                                                    .context("flushing")
+                                                                    .and_then(|_| output_file.rewind().context("rewinding output file"))
+                                                                    .and_then(|_| {
+                                                                        wrote
+                                                                            .eq(&expected_size)
+                                                                            .then_some(output_file)
+                                                                            .with_context(|| format!("expected [{expected_size}], found [{wrote}]"))
+                                                                    })
                                                             })
-                                                    })
-                                                })
-                                                .with_context(|| format!("when extracting entry {entry:#?}"))
-                                                .map_err(|e| {
-                                                    let error = Cow::Owned(format!("{e:?}"));
-                                                    sevenz_rust2::Error::Io(std::io::Error::other(e), error)
-                                                })
-                                                .map(|out| {
-                                                    output_data.push((original_file_path, super::ArchiveFileHandle::Zip(out)));
-                                                    extracting_files.pb_inc(1);
-                                                    !lookup.is_empty()
-                                                })
-                                        }),
-                                        None => {
-                                            std::io::copy(reader, &mut std::io::empty())?;
-                                            std::result::Result::<_, sevenz_rust2::Error>::Ok(!lookup.is_empty())
-                                        }
+                                                        })
+                                                        .with_context(|| format!("when extracting entry {entry:#?}"))
+                                                        .map_err(to_sevenz_error)
+                                                        .map(|out| {
+                                                            output_data.push((original_file_path, super::ArchiveFileHandle::Zip(out)));
+                                                            extracting_files.pb_inc(1);
+                                                            !lookup.is_empty()
+                                                        })
+                                                }),
+                                                None => {
+                                                    std::io::copy(reader, &mut std::io::empty())?;
+                                                    std::result::Result::<_, sevenz_rust2::Error>::Ok(!lookup.is_empty())
+                                                }
+                                            })
                                     })
                                     .with_context(|| format!("decoding chunk from [{block_idx}]"))
                                     .map(|_| output_data)
@@ -173,11 +170,7 @@ impl ProcessArchive for SevenZipArchive {
                                         )),
                                     })
                             })
-                            .try_flat_map(|v| {
-                                v.into_iter()
-                                    .map(|(path, handle)| (path.as_path(), handle))
-                                    .map(Ok)
-                            })
+                            .try_flat_map(|v| v.into_iter().map(Ok))
                             .collect::<Result<Vec<_>>>()
                     })
                     .context("extracting multiple paths failed")
@@ -201,6 +194,7 @@ impl ProcessArchive for SevenZipArchive {
 #[cfg(test)]
 mod tests {
     use {
+        crate::utils::ExistingPathRead,
         rand::Rng,
         rayon::iter::{IntoParallelIterator, ParallelIterator},
         tempfile::NamedTempFile,
@@ -219,7 +213,15 @@ mod tests {
                             .and_then(|_| file.rewind().context("rewinding"))
                     })
                     .and_then(|_| file.keep().context("keeping file"))
-                    .and_then(|(file, path)| in_tempfile(file, &path).and_then(|val| std::fs::remove_file(&path).context("removing").map(|_| val)))
+                    .and_then(|(file, path)| {
+                        in_tempfile(
+                            file,
+                            &path
+                                .pipe_deref(CaseInsensitivePathBuf::from_path)
+                                .expect("bad path"),
+                        )
+                        .and_then(|val| std::fs::remove_file(&path).context("removing").map(|_| val))
+                    })
             })
     }
 
@@ -236,9 +238,8 @@ mod tests {
                     archive.list_paths_with_originals().and_then(|paths| {
                         paths
                             .into_iter()
-                            .map(|(path, _)| path.as_path())
                             .collect::<Vec<_>>()
-                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
+                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|(path, _)| path).collect_vec()))
                             .map(|extracted| {
                                 extracted
                                     .into_iter()
@@ -260,9 +261,9 @@ mod tests {
                     archive.list_paths_with_originals().and_then(|paths| {
                         paths
                             .into_iter()
-                            .map(|(path, _)| path.as_path())
+                            // .map(|(path, _)| path.as_path())
                             .collect::<Vec<_>>()
-                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
+                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|(path, _)| path).collect_vec()))
                             .map(|extracted| {
                                 extracted
                                     .into_iter()
@@ -287,10 +288,10 @@ mod tests {
                             archive.list_paths_with_originals().and_then(|paths| {
                                 paths
                                     .into_iter()
-                                    .map(|(path, _)| path.as_path())
-                                    .filter(|_| rand::thread_rng().gen::<bool>())
+                                    // .map(|(path, _)| path.as_path())
+                                    .filter(|_| rand::thread_rng().r#gen::<bool>())
                                     .collect::<Vec<_>>()
-                                    .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
+                                    .pipe(|paths| archive.get_many_handles(&paths.iter().map(|(path, _)| path).collect_vec()))
                                     .map(|extracted| {
                                         extracted
                                             .into_iter()
@@ -314,24 +315,25 @@ mod tests {
             (0..10000)
                 .into_par_iter()
                 .map(|_| {
-                    path.open_file_read().and_then(|(_, file)| {
-                        SevenZipArchive::new(file)
-                            .context("opening archive")
-                            .and_then(|mut archive| {
-                                archive.list_paths_with_originals().and_then(|paths| {
-                                    paths
-                                        .into_iter()
-                                        .map(|(path, _)| path.as_path())
-                                        .collect::<Vec<_>>()
-                                        .pipe(|paths| archive.get_many_handles(&paths.iter().map(|p| p.as_path()).collect_vec()))
-                                        .map(|extracted| {
-                                            extracted
-                                                .into_iter()
-                                                .filter_map(|f| rand::thread_rng().gen::<bool>().then_some(f))
-                                                .for_each(|(path, _)| info!("succesfully extracted [{path:?}]"))
-                                        })
+                    path.try_exists().and_then(|path| {
+                        path.open_file_read().and_then(|(_, file)| {
+                            SevenZipArchive::new(file)
+                                .context("opening archive")
+                                .and_then(|mut archive| {
+                                    archive.list_paths_with_originals().and_then(|paths| {
+                                        paths
+                                            .into_iter()
+                                            .collect::<Vec<_>>()
+                                            .pipe(|paths| archive.get_many_handles(&paths.iter().map(|(path, _)| path).collect_vec()))
+                                            .map(|extracted| {
+                                                extracted
+                                                    .into_iter()
+                                                    .filter_map(|f| rand::thread_rng().r#gen::<bool>().then_some(f))
+                                                    .for_each(|(path, _)| info!("succesfully extracted [{path:?}]"))
+                                            })
+                                    })
                                 })
-                            })
+                        })
                     })
                 })
                 .collect::<Result<Vec<_>>>()

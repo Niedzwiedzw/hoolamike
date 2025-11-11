@@ -1,19 +1,18 @@
 use {
     crate::{
-        install_modlist::directives::nested_archive_manager::{max_open_files, WithPermit, OPEN_FILE_PERMITS},
+        install_modlist::directives::nested_archive_manager::{OPEN_FILE_PERMITS, WithPermit, max_open_files},
+        path::{CaseInsensitivePathBuf, ExistingPath, ExistingPathBuf, Path, PathBuf},
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::PathReadWrite,
+        utils::{ExistingPathRead, StreamLenExt},
     },
     anyhow::{Context, Result},
     std::{
-        ffi::OsStr,
         io::{Seek, Write},
-        path::{Path, PathBuf},
         sync::Arc,
     },
     tap::prelude::*,
     tokio::sync::OwnedSemaphorePermit,
-    tracing::{info_span, instrument, warn, Instrument},
+    tracing::{Instrument, info_span, instrument, warn},
     wrapped_7zip::WRAPPED_7ZIP,
 };
 
@@ -132,12 +131,8 @@ static_assertions::assert_impl_all!(ArchiveFileHandle: Send, Sync);
 
 impl ArchiveHandle<'_> {
     /// this is literally bruteforce approach
-    pub fn with_guessed<T, F: FnMut(Self) -> Result<T> + Send + Sync>(path: &Path, extension: Option<&OsStr>, mut with_guessed: F) -> anyhow::Result<T> {
-        match extension
-            .map(|ext| ext.to_string_lossy())
-            .map(|b| b.to_lowercase())
-            .as_deref()
-        {
+    pub fn with_guessed<T, F: FnMut(Self) -> Result<T> + Send + Sync>(path: &ExistingPath, extension: Option<&str>, mut with_guessed: F) -> anyhow::Result<T> {
+        match extension.map(|b| b.to_lowercase()).as_deref() {
             Some("bsa" | "ba2" | "mpi") => bethesda_archive::BethesdaArchive::open(path)
                 .context("reading bsa")
                 .map(Self::Bethesda)
@@ -167,7 +162,7 @@ impl ArchiveHandle<'_> {
                 })
                 .or_else(|reason| {
                     WRAPPED_7ZIP
-                        .with(|wrapped| wrapped.open_file(path).map(Self::Wrapped7Zip))
+                        .with(|wrapped| wrapped.open_file(path.as_os_path()).map(Self::Wrapped7Zip))
                         .and_then(&mut with_guessed)
                         .with_context(|| format!("trying because: {reason:?}"))
                         .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))
@@ -195,7 +190,7 @@ impl ArchiveHandle<'_> {
                 })
                 .or_else(|reason| {
                     WRAPPED_7ZIP
-                        .with(|wrapped| wrapped.open_file(path).map(Self::Wrapped7Zip))
+                        .with(|wrapped| wrapped.open_file(path.as_os_path()).map(Self::Wrapped7Zip))
                         .and_then(&mut with_guessed)
                         .with_context(|| format!("trying because: {reason:?}"))
                         .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))
@@ -228,7 +223,7 @@ impl ArchiveHandle<'_> {
                 })
                 .or_else(|reason| {
                     WRAPPED_7ZIP
-                        .with(|wrapped| wrapped.open_file(path).map(Self::Wrapped7Zip))
+                        .with(|wrapped| wrapped.open_file(path.as_os_path()).map(Self::Wrapped7Zip))
                         .and_then(&mut with_guessed)
                         .with_context(|| format!("trying because: {reason:?}"))
                         .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))
@@ -272,7 +267,7 @@ impl ArchiveHandle<'_> {
                     })
                     .or_else(|err| {
                         WRAPPED_7ZIP
-                            .with(|wrapped| wrapped.open_file(path).map(Self::Wrapped7Zip))
+                            .with(|wrapped| wrapped.open_file(path.as_os_path()).map(Self::Wrapped7Zip))
                             .and_then(&mut with_guessed)
                             .with_context(|| format!("because: {err:#?}"))
                             .tap_err(|message| tracing::warn!("could not open archive with 7z: {message:?}"))

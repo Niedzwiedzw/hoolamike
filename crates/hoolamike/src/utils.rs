@@ -1,19 +1,32 @@
 use {
+    crate::path::ExistingPathBuf,
     anyhow::Context,
-    base64::{prelude::BASE64_STANDARD, Engine},
+    base64::{Engine, prelude::BASE64_STANDARD},
+    case_insensitive_path::{ExistingPath, PathExistsUtf8Ext},
     futures::FutureExt,
     itertools::Itertools,
     serde::{Deserialize, Serialize},
-    std::{
-        borrow::Cow,
-        convert::identity,
-        future::Future,
-        path::{Path, PathBuf},
-    },
+    std::{borrow::Cow, convert::identity, future::Future},
     tap::prelude::*,
     tempfile::{NamedTempFile, TempPath},
     tracing::{debug_span, info_span},
 };
+
+#[extension_traits::extension(pub trait StreamLenExt)]
+impl<T: std::io::Seek> T {
+    fn stream_len(&mut self) -> std::io::Result<u64> {
+        let old_pos = self.stream_position()?;
+        let len = self.seek(std::io::SeekFrom::End(0))?;
+
+        // Avoid seeking a third time when we were already at the end of the
+        // stream. The branch is usually way cheaper than a seek operation.
+        if old_pos != len {
+            self.seek(std::io::SeekFrom::Start(old_pos))?;
+        }
+
+        Ok(len)
+    }
+}
 
 pub fn obfuscate_value(value: &str) -> String {
     match value {
@@ -69,30 +82,6 @@ impl<T, E> std::result::Result<T, E> {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Hash, derive_more::Display, Clone, Ord)]
-pub struct MaybeWindowsPath(pub String);
-
-impl std::fmt::Debug for MaybeWindowsPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl MaybeWindowsPath {
-    pub fn into_path(self) -> PathBuf {
-        let s = self.0;
-        let s = match s.contains("\\\\") {
-            true => s.split("\\\\").join("/"),
-            false => s,
-        };
-        let s = match s.contains("\\") {
-            true => s.split("\\").join("/"),
-            false => s,
-        };
-        PathBuf::from(s)
-    }
-}
-
 #[allow(dead_code)]
 pub fn boxed_iter<'a, T: 'a>(iter: impl Iterator<Item = T> + 'a) -> Box<dyn Iterator<Item = T> + 'a> {
     Box::new(iter)
@@ -106,18 +95,47 @@ macro_rules! cloned {
     )*}
 }
 
-#[extension_traits::extension(pub(crate) trait PathReadWrite)]
-impl<T: AsRef<std::path::Path>> T {
-    fn open_file_read(&self) -> anyhow::Result<(PathBuf, std::fs::File)> {
-        debug_span!("open_file_read", path=%self.as_ref().display()).in_scope(|| {
+impl ExistingPathRead for tempfile::TempPath {
+    fn open_file_read(&self) -> anyhow::Result<(ExistingPathBuf, std::fs::File)> {
+        self.exists_utf8().and_then(|f| f.open_file_read())
+    }
+
+    fn join_create(&self, segment: &str) -> anyhow::Result<ExistingPathBuf> {
+        self.exists_utf8().and_then(|d| d.join_create(segment))
+    }
+}
+
+#[extension_traits::extension(pub(crate) trait ExistingPathRead)]
+impl ExistingPath {
+    fn open_file_read(&self) -> anyhow::Result<(ExistingPathBuf, std::fs::File)> {
+        debug_span!("open_file_read", path=%self).in_scope(|| {
             std::fs::OpenOptions::new()
                 .read(true)
-                .open(self)
-                .with_context(|| format!("opening file for reading at [{}]", self.as_ref().display()))
-                .map(|file| (self.as_ref().to_owned(), file))
+                .open(self.as_ref())
+                .with_context(|| format!("opening file for reading at [{self}]"))
+                .map(|file| (self.into_owned(), file))
         })
     }
-    fn open_file_write(&self) -> anyhow::Result<(PathBuf, std::fs::File)> {
+    fn join_create(&self, segment: &str) -> anyhow::Result<ExistingPathBuf> {
+        self.as_path()
+            .join_checked(segment)
+            .context("adding segment")
+            .and_then(|joined| joined.create_dir())
+            .with_context(|| format!("join-creating directory [{segment}] at [{self}]"))
+    }
+}
+
+#[extension_traits::extension(pub(crate) trait PathReadWrite)]
+impl<T: AsRef<std::path::Path>> T {
+    fn create_dir(&self) -> anyhow::Result<ExistingPathBuf> {
+        let at = self.as_ref();
+        std::fs::create_dir_all(&at)
+            .context("creating all directories")
+            .and_then(|()| ExistingPathBuf::new(at))
+            .with_context(|| format!("creating directory at [{}]", at.display()))
+    }
+
+    fn open_file_write(&self) -> anyhow::Result<(ExistingPathBuf, std::fs::File)> {
         debug_span!("open_file_read", path=%self.as_ref().display()).in_scope(|| {
             Ok(()).and_then(|_| {
                 if let Some(parent) = self.as_ref().parent() {
@@ -129,7 +147,11 @@ impl<T: AsRef<std::path::Path>> T {
                     .truncate(true)
                     .open(self)
                     .with_context(|| format!("opening file for writing at [{}]", self.as_ref().display()))
-                    .map(|file| (self.as_ref().to_owned(), file))
+                    .and_then(|file| {
+                        self.as_ref()
+                            .pipe(ExistingPathBuf::new)
+                            .map(|path| (path, file))
+                    })
             })
         })
     }
@@ -223,11 +245,18 @@ impl<T: AsRef<[u8]>> AsBase64 for T {
     }
 }
 
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
+
 impl AsBase64 for Path {
     fn to_base64(&self) -> String {
         self.as_os_str().as_encoded_bytes().to_base64()
     }
 }
+
+pub type FileExtension<'a> = Option<&'a str>;
 
 #[extension_traits::extension(pub trait PathFileNameOrEmpty)]
 impl<P: AsRef<Path>> P {
@@ -278,5 +307,37 @@ impl<P: AsRef<Path>> P {
                         )
                     })
             })
+    }
+}
+
+pub trait IteratorTryFindMap: Iterator {
+    /// Applies a fallible function to each item and returns the first `Ok(Some(value))`.
+    /// Returns `Ok(None)` if no item produced a `Some`, or the first `Err` encountered.
+    fn try_find_map<F, T, E>(&mut self, f: F) -> Result<Option<T>, E>
+    where
+        F: FnMut(Self::Item) -> Result<Option<T>, E>;
+}
+
+impl<I: Iterator> IteratorTryFindMap for I {
+    fn try_find_map<F, T, E>(&mut self, mut f: F) -> Result<Option<T>, E>
+    where
+        F: FnMut(Self::Item) -> Result<Option<T>, E>,
+    {
+        loop {
+            match self.next() {
+                Some(item) => match f(item)? {
+                    Some(value) => return Ok(Some(value)),
+                    None => continue,
+                },
+                None => return Ok(None),
+            }
+        }
+    }
+}
+
+#[extension_traits::extension(pub trait BTreeSetRemoveEntryExt)]
+impl<K: Ord> BTreeSet<K> {
+    fn remove_entry(&mut self, entry: K) -> Option<K> {
+        self.remove(&entry).then_some(entry)
     }
 }

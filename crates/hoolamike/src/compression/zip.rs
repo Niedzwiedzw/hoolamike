@@ -1,12 +1,13 @@
 use {
     super::{ProcessArchive, *},
     crate::{
-        compression::case_insensitive_lookup::{CaseInsenitiveBasicListing, Entry},
+        compression::case_insensitive_lookup::CaseInsenitiveBasicListing,
+        path::{Path, PathBuf},
         progress_bars_v2::count_progress_style,
-        utils::PathFileNameOrEmpty,
+        utils::{ExistingPathRead, PathFileNameOrEmpty},
     },
     itertools::Itertools,
-    std::{fs::File, io::BufWriter, path::PathBuf},
+    std::{fs::File, io::BufWriter},
     tempfile::NamedTempFile,
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
@@ -19,7 +20,7 @@ pub struct ZipArchive(File);
 pub type ZipFile = NamedTempFile;
 
 impl ZipArchive {
-    pub fn new(path: &Path) -> Result<Self> {
+    pub fn new(path: &ExistingPath) -> Result<Self> {
         path.open_file_read()
             .and_then(|(_path, mut file)| {
                 ::zip::ZipArchive::new(&mut file)
@@ -61,18 +62,15 @@ impl ZipArchive {
                 })
                 .process_results(|e| CaseInsenitiveBasicListing::from_string_paths(e.into_iter()))
                 .context("listing archive contents")
+                .flatten()
         })
     }
 }
 
 impl ProcessArchive for ZipArchive {
-    fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
-        self.list_paths_with_originals().map(|paths| {
-            paths
-                .into_iter()
-                .map(|(path, ())| path.original.pipe_deref(PathBuf::from))
-                .collect()
-        })
+    fn list_paths(&mut self) -> Result<Vec<CaseInsensitivePathBuf>> {
+        self.list_paths_with_originals()
+            .map(|paths| paths.into_iter().map(|(path, ())| path).collect())
     }
 
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
@@ -88,20 +86,16 @@ impl ProcessArchive for ZipArchive {
                     files_to_extract
                         .into_iter()
                         .map(
-                            |Entry {
-                                 archive_path,
-                                 requested_path,
-                                 extra_value: (),
-                             }| {
-                                let span = info_span!("extracting_file", ?archive_path, ?requested_path);
+                            |(archive_path, _)| {
+                                let span = info_span!("extracting_file", ?archive_path);
 
                                 archive
-                                    .by_name(archive_path.as_ref())
-                                    .with_context(|| format!("opening [{requested_path:?}] ({archive_path})"))
+                                    .by_name(archive_path.as_original_path().as_ref())
+                                    .with_context(|| format!("opening ({archive_path})"))
                                     .and_then(|mut file| {
                                         file.size().pipe(|expected_size| {
                                             archive_path
-                                                .as_ref()
+                                                .as_path()
                                                 .named_tempfile_with_context()
                                                 .and_then(|mut output| {
                                                     #[allow(clippy::let_and_return)]
@@ -125,7 +119,7 @@ impl ProcessArchive for ZipArchive {
                                                 })
                                         })
                                     })
-                                    .map(|output| (requested_path.as_path(), output.pipe(super::ArchiveFileHandle::Zip)))
+                                    .map(|output| (archive_path, output.pipe(super::ArchiveFileHandle::Zip)))
                                     .tap_ok(|_| {
                                         extracting_files.pb_inc(1);
                                     })

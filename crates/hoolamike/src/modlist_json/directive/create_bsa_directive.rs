@@ -15,7 +15,7 @@ pub struct CreateBSADirectiveKind<DirectiveState, FileState> {
     /// to: String
     /// Description: Destination path for the directive's output.
     /// Usage: Where to place extracted or processed files.
-    pub to: MaybeWindowsPath,
+    pub to: CaseInsensitivePathBuf,
     #[serde(rename = "TempID")]
     /// temp_id: Option<String> (renamed from TempID)
     /// Description: Temporary identifier used during processing.

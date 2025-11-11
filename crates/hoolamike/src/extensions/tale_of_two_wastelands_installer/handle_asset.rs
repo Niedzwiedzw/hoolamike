@@ -1,14 +1,14 @@
 use {
     super::{
-        manifest_file::asset::{Asset, CopyAsset, LocationIndex, NewAsset, PatchAsset},
         LazyArchiveChunk,
         PathReadWrite,
         RepackingContext,
         SeekWithTempFileExt,
+        manifest_file::asset::{Asset, CopyAsset, LocationIndex, NewAsset, PatchAsset},
     },
     crate::{
         compression::preheated_archive::PreheatedArchive,
-        utils::{with_scoped_temp_path, ReadableCatchUnwindExt},
+        utils::{ExistingPathRead, ReadableCatchUnwindExt, with_scoped_temp_path},
     },
     anyhow::{Context, Result},
     hoola_audio::Mp3TargetChannelMode,
@@ -39,14 +39,7 @@ impl AssetContext {
                 let target = target.lookup_from_both_source_and_target(&source);
                 preheated_mpi_file
                     .paths
-                    .get(
-                        &source
-                            .path
-                            .0
-                            .clone()
-                            .tap_mut(|path| path.0 = path.0.to_lowercase())
-                            .into_path(),
-                    )
+                    .get(&source.path.0)
                     .with_context(|| format!("no [{source:?}] in mpi file"))
                     .and_then(|path| path.open_file_read())
                     .and_then(|(_, handle)| target.insert_into(self.repacking_context.clone(), &mut BufReader::new(handle)))
@@ -76,18 +69,7 @@ impl AssetContext {
                 let target = target.lookup_from_both_source_and_target(&source);
                 preheated_mpi_file
                     .paths
-                    .get(
-                        &target
-                            .path
-                            .0
-                            .clone()
-                            .tap_mut(|patch| patch.0 = patch.0.to_lowercase())
-                            .into_path()
-                            .normalize()
-                            .tap_mut(|p| {
-                                p.add_extension("xd3");
-                            }),
-                    )
+                    .get(&target.path.0)
                     .with_context(|| format!("no [{source:?}] in mpi file"))
                     .context("reading patch file")
                     .and_then(|patch_file| {
@@ -160,7 +142,7 @@ impl AssetContext {
                     .target
                     .clone()
                     .lookup_from_both_source_and_target(&audio_enc.source);
-                let target_path = target.path.0.clone().into_path();
+                let target_path = target.path.0.clone();
                 audio_enc
                     .params
                     .parse()
@@ -203,8 +185,7 @@ impl AssetContext {
 
                         let target_extension = target_path
                             .extension()
-                            .context("target file has no extension")
-                            .map(|e| e.to_string_lossy().to_string())?
+                            .context("target file has no extension")?
                             .to_lowercase();
                         if let Some(target_format) = target_format {
                             if target_format != target_extension {

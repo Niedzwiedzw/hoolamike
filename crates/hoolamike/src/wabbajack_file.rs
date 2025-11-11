@@ -1,19 +1,18 @@
 use {
-    crate::{compression::ProcessArchive, install_modlist::directives::wabbajack_file_handle::WabbajackFileHandle, utils::PathReadWrite},
+    crate::{compression::ProcessArchive, install_modlist::directives::wabbajack_file_handle::WabbajackFileHandle, utils::ExistingPathRead},
     anyhow::{Context, Result},
-    serde::Serialize,
+    case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath, ExistingPathBuf},
     std::{
-        io::Read,
-        path::{Path, PathBuf},
+        io::Read, str::FromStr,
     },
     tap::prelude::*,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct WabbajackFile {
-    pub wabbajack_file_path: PathBuf,
-    pub wabbajack_entries: Vec<PathBuf>,
+    pub wabbajack_file_path: ExistingPathBuf,
+    pub wabbajack_entries: Vec<CaseInsensitivePathBuf>,
     pub modlist: super::modlist_json::Modlist,
 }
 
@@ -21,7 +20,7 @@ const MODLIST_JSON_FILENAME: &str = "modlist";
 
 impl WabbajackFile {
     #[tracing::instrument]
-    pub fn load_modlist_json(at_path: &Path) -> Result<Self> {
+    pub fn load_modlist_json(at_path: &ExistingPath) -> Result<Self> {
         at_path
             .open_file_read()
             .and_then(|(_, file)| crate::compression::compress_tools::ArchiveHandle::new(file))
@@ -29,7 +28,7 @@ impl WabbajackFile {
             .and_then(|mut archive| {
                 archive.list_paths().and_then(|entries| {
                     archive
-                        .get_handle(Path::new(MODLIST_JSON_FILENAME))
+                        .get_handle(&MODLIST_JSON_FILENAME.pipe(CaseInsensitivePathBuf::from_str).expect("bad modlist json filename"))
                         .context("looking up file by name")
                         .and_then(|mut handle| {
                             String::new()
@@ -52,7 +51,7 @@ impl WabbajackFile {
             })
     }
     #[tracing::instrument]
-    pub fn load_wabbajack_file(at_path: PathBuf) -> Result<(WabbajackFileHandle, Self)> {
-        Self::load_modlist_json(&at_path).and_then(|data| WabbajackFileHandle::from_archive(at_path).map(|archive| (archive, data)))
+    pub fn load_wabbajack_file(at_path: &ExistingPath) -> Result<(WabbajackFileHandle, Self)> {
+        Self::load_modlist_json(at_path).and_then(|data| WabbajackFileHandle::from_archive(at_path).map(|archive| (archive, data)))
     }
 }

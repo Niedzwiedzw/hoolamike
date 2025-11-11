@@ -63,7 +63,7 @@ MimeType=x-scheme-handler/nxm;
 mod windows {
     use {
         super::*,
-        winreg::{enums::*, RegKey},
+        winreg::{RegKey, enums::*},
     };
 
     #[instrument]

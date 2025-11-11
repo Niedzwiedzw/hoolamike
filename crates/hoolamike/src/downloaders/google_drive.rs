@@ -16,7 +16,7 @@ pub mod response_parsing {
         regex::Regex,
         scraper::{Html, Selector},
         std::{collections::HashMap, str::FromStr},
-        url::{form_urlencoded, Url},
+        url::{Url, form_urlencoded},
     };
 
     /// BASED ON https://github.com/wkentaro/gdown/blob/main/gdown/download.py

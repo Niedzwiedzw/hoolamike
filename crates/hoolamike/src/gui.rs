@@ -1,14 +1,17 @@
 use {
     crate::{
-        compression::{zip::ZipArchive, ProcessArchive},
-        config_file::{HoolamikeConfig, CONFIG_FILE_NAME},
-        modlist_json::{GameFileSourceState, GameName},
-        wabbajack_file::WabbajackFile,
         Cli,
+        compression::{ProcessArchive, zip::ZipArchive},
+        config_file::{CONFIG_FILE_NAME, HoolamikeConfig},
+        modlist_json::{GameFileSourceState, GameName},
+        path::CaseInsensitivePathBuf,
+        utils::ResultZipExt,
+        wabbajack_file::WabbajackFile,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
+    case_insensitive_path::{ExistingPathBuf, PathExistsUtf8Ext},
     futures::{FutureExt, TryFutureExt},
-    iced::{widget::image::Handle as ImageHandle, Task, Theme},
+    iced::{Task, Theme, widget::image::Handle as ImageHandle},
     image::{DynamicImage, GenericImage, GenericImageView},
     itertools::Itertools,
     serde::Serialize,
@@ -17,6 +20,7 @@ use {
         future::ready,
         io::{BufRead, Read, Seek},
         path::{Path, PathBuf},
+        str::FromStr,
     },
     tap::prelude::*,
     tracing::{error, info},
@@ -25,7 +29,7 @@ use {
 mod helpers {
     use {
         extension_traits::extension,
-        iced::{font::Weight, Font},
+        iced::{Font, font::Weight},
         normalize_path::NormalizePath,
         std::path::{Path, PathBuf},
         tap::Pipe,
@@ -144,7 +148,7 @@ async fn download_image(url: url::Url) -> Result<ImageHandle> {
         .with_context(|| format!("fetching image at [{url}]"))
 }
 
-fn load_image_from_zip(wabbajack_file: PathBuf, path: PathBuf) -> Result<ImageHandle> {
+fn load_image_from_zip(wabbajack_file: ExistingPathBuf, path: CaseInsensitivePathBuf) -> Result<ImageHandle> {
     ZipArchive::new(&wabbajack_file)
         .with_context(|| format!("reading wabbajack file contents at [{wabbajack_file:?}]"))
         .and_then(|mut archive| archive.get_handle(&path))
@@ -230,46 +234,52 @@ impl State {
                         None
                     }
                 },
-                Message::SelectWabbajackFile(path_buf) => WabbajackFile::load_modlist_json(&path_buf).pipe(|res| match res {
-                    Ok(file) => {
-                        let image_url = file.modlist.image.clone();
-                        self.required_games = file
-                            .modlist
-                            .archives
-                            .iter()
-                            .filter_map(|a| match &a.state {
-                                crate::modlist_json::State::GameFileSource(GameFileSourceState { game, .. }) => Some(game),
-                                _ => None,
-                            })
-                            .collect::<BTreeSet<_>>()
-                            .into_iter()
-                            .cloned()
-                            .collect::<BTreeSet<_>>();
-                        self.loaded_modlist_json = Some(file);
-                        self.config.installation.wabbajack_file_path = path_buf.clone();
+                Message::SelectWabbajackFile(path_buf) => path_buf
+                    .exists_utf8()
+                    .and_then(|path_buf| WabbajackFile::load_modlist_json(&path_buf))
+                    .pipe(|res| match res {
+                        Ok(file) => {
+                            let image_url = file.modlist.image.clone();
+                            self.required_games = file
+                                .modlist
+                                .archives
+                                .iter()
+                                .filter_map(|a| match &a.state {
+                                    crate::modlist_json::State::GameFileSource(GameFileSourceState { game, .. }) => Some(game),
+                                    _ => None,
+                                })
+                                .collect::<BTreeSet<_>>()
+                                .into_iter()
+                                .cloned()
+                                .collect::<BTreeSet<_>>();
+                            self.loaded_modlist_json = Some(file);
+                            self.config.installation.wabbajack_file_path = path_buf.clone();
 
-                        Task::perform(
-                            match image_url
-                                .parse::<url::Url>()
-                                .with_context(|| format!("bad image url: {image_url}"))
-                            {
-                                Ok(url) => download_image(url).boxed(),
-                                Err(reason) => {
-                                    tracing::debug!("not a url?: {reason:?}");
-                                    load_image_from_zip(path_buf, image_url.into())
-                                        .pipe(ready)
-                                        .boxed()
-                                }
-                            },
-                            |image| Some(Message::ImageLoaded(image)),
-                        )
-                        .pipe(Some)
-                    }
-                    Err(reason) => {
-                        self.error = Some(reason);
-                        None
-                    }
-                }),
+                            Task::perform(
+                                match image_url
+                                    .parse::<url::Url>()
+                                    .with_context(|| format!("bad image url: {image_url}"))
+                                {
+                                    Ok(url) => download_image(url).boxed(),
+                                    Err(reason) => {
+                                        tracing::debug!("not a url?: {reason:?}");
+                                        path_buf
+                                            .exists_utf8()
+                                            .zip(image_url.pipe_deref(CaseInsensitivePathBuf::from_str))
+                                            .and_then(|(path_buf, image_url)| load_image_from_zip(path_buf, image_url))
+                                            .pipe(ready)
+                                            .boxed()
+                                    }
+                                },
+                                |image| Some(Message::ImageLoaded(image)),
+                            )
+                            .pipe(Some)
+                        }
+                        Err(reason) => {
+                            self.error = Some(reason);
+                            None
+                        }
+                    }),
                 Message::ImageLoaded(handle) => match handle {
                     Ok(handle) => {
                         self.loaded_image = Some(handle);

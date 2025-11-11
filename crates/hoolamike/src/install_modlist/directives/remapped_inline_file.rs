@@ -3,16 +3,18 @@ use {
     crate::{
         modlist_json::directive::RemappedInlineFileDirective,
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::PathReadWrite,
+        utils::{ExistingPathRead, PathReadWrite, StreamLenExt},
     },
-    std::io::{Read, Seek},
+    std::io::Read,
     tracing::instrument,
+    typed_path::Utf8PlatformPath,
     wabbajack_file_handle::WabbajackFileHandle,
 };
 
 #[allow(dead_code)]
 pub mod wabbajack_consts {
-    use std::path::Path;
+
+    use typed_path::Utf8TypedPath;
 
     pub(crate) static GAME_PATH_MAGIC_BACK: &str = "{--||GAME_PATH_MAGIC_BACK||--}";
     pub(crate) static GAME_PATH_MAGIC_DOUBLE_BACK: &str = "{--||GAME_PATH_MAGIC_DOUBLE_BACK||--}";
@@ -26,11 +28,11 @@ pub mod wabbajack_consts {
     pub(crate) static DOWNLOAD_PATH_MAGIC_DOUBLE_BACK: &str = "{--||DOWNLOAD_PATH_MAGIC_DOUBLE_BACK||--}";
     pub(crate) static DOWNLOAD_PATH_MAGIC_FORWARD: &str = "{--||DOWNLOAD_PATH_MAGIC_FORWARD||--}";
     thread_local! {
-        pub(crate)  static SETTINGS_INI: &'static Path = Path::new("settings.ini");
-        pub(crate)  static MO2_MOD_FOLDER_NAME: &'static Path = Path::new("mods");
-        pub(crate)  static MO2_PROFILES_FOLDER_NAME: &'static Path = Path::new("profiles");
-        pub(crate)  static BSA_CREATION_DIR: &'static Path = Path::new("TEMP_BSA_FILES");
-        pub(crate)  static KNOWN_MODIFIED_FILES: [&'static Path; 2] = [Path::new("modlist.txt"), Path::new("SkyrimPrefs.ini")];
+        pub(crate)  static SETTINGS_INI: Utf8TypedPath<'static> = Utf8TypedPath::unix("settings.ini");
+        pub(crate)  static MO2_MOD_FOLDER_NAME:  Utf8TypedPath<'static> = Utf8TypedPath::unix("mods");
+        pub(crate)  static MO2_PROFILES_FOLDER_NAME:  Utf8TypedPath<'static> = Utf8TypedPath::unix("profiles");
+        pub(crate)  static BSA_CREATION_DIR:  Utf8TypedPath<'static> = Utf8TypedPath::unix("TEMP_BSA_FILES");
+        pub(crate)  static KNOWN_MODIFIED_FILES: [ Utf8TypedPath<'static>; 2] = [Utf8TypedPath::unix("modlist.txt"), Utf8TypedPath::unix("SkyrimPrefs.ini")];
     }
 
     pub(crate) const STEP_PREPARING: &str = "Preparing";
@@ -42,15 +44,15 @@ pub mod wabbajack_consts {
 
 #[derive(Debug)]
 pub struct RemappingContext {
-    pub game_folder: PathBuf,
-    pub output_directory: PathBuf,
-    pub downloads_directory: PathBuf,
+    pub game_folder: ExistingPathBuf,
+    pub output_directory: ExistingPathBuf,
+    pub downloads_directory: ExistingPathBuf,
 }
 
 #[extension_traits::extension(trait PathCrossPlatformJoineryExt)]
-impl Path {
+impl Utf8PlatformPath {
     fn join_with_delimiter(&self, delimiter: &str) -> String {
-        self.iter().map(|e| e.to_string_lossy()).join(delimiter)
+        self.iter().join(delimiter)
     }
 }
 
@@ -70,16 +72,19 @@ impl RemappingContext {
                 }
                 let game_folder = |delimiter| {
                     game_folder
+                        .as_path()
                         .join_with_delimiter(delimiter)
                         .pipe_as_ref(trim_relative_path_start)
                 };
                 let install_directory = |delimiter| {
                     install_directory
+                        .as_path()
                         .join_with_delimiter(delimiter)
                         .pipe_as_ref(trim_relative_path_start)
                 };
                 let downloads_directory = |delimiter| {
                     downloads_directory
+                        .as_path()
                         .join_with_delimiter(delimiter)
                         .pipe_as_ref(trim_relative_path_start)
                 };
@@ -144,8 +149,9 @@ impl RemappedInlineFileHandler {
             .and_then(|output| {
                 remapping_context
                     .output_directory
-                    .join(to.clone().into_path())
-                    .open_file_write()
+                    .case_insensitive()
+                    .join_case_insensitive(to.clone())
+                    .and_then(|to| to.as_path().open_file_write())
                     .and_then(|(_, mut file)| {
                         std::io::copy(&mut tracing::Span::current().wrap_read(size, std::io::Cursor::new(output)), &mut file).context("writing remapped file")
                     })

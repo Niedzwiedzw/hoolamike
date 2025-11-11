@@ -6,6 +6,7 @@ use {
         utils::PathFileNameOrEmpty,
     },
     anyhow::{Context, Result},
+    case_insensitive_path::PathExistsUtf8Ext,
     clap::Args,
     futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt},
     std::{future::ready, num::NonZeroUsize, path::PathBuf, sync::Arc},
@@ -59,7 +60,10 @@ impl CommandArgs {
                                     .pipe(ready)
                                     .map_ok(|output_path| (url, output_path, idx))
                                     .and_then(|(url, output_path, idx)| {
-                                        stream_file_validate(url, output_path, None)
+                                        output_path
+                                            .utf8_platform_path()
+                                            .pipe(ready)
+                                            .and_then(|output_path| stream_file_validate(url, output_path, None))
                                             .map(move |r| r.with_context(|| format!("downloading part {idx}")))
                                             .map_ok(move |output| {
                                                 info!("downloaded chunk {idx}/{chunk_count}");

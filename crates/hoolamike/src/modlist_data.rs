@@ -3,8 +3,8 @@ use {
     itertools::Itertools,
     std::collections::BTreeMap,
     tabled::{
-        settings::{object::Columns, Color, Rotate, Style},
         Tabled,
+        settings::{Color, Rotate, Style, object::Columns},
     },
     tap::prelude::*,
 };

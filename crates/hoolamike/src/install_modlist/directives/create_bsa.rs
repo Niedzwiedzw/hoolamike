@@ -2,15 +2,16 @@ use {
     super::*,
     crate::{
         modlist_json::directive::create_bsa_directive::CreateBSADirective,
-        progress_bars_v2::{count_progress_style, IndicatifWrapIoExt},
-        utils::PathReadWrite,
+        progress_bars_v2::{IndicatifWrapIoExt, count_progress_style},
+        utils::{ExistingPathRead, PathReadWrite},
     },
+    case_insensitive_path::ExistingPathBuf,
     remapped_inline_file::wabbajack_consts::BSA_CREATION_DIR,
 };
 
 #[derive(Clone, Debug)]
 pub struct CreateBSAHandler {
-    pub output_directory: PathBuf,
+    pub output_directory: ExistingPathBuf,
 }
 
 pub mod fallout_4;
@@ -33,31 +34,35 @@ impl CreateBSAHandler {
         let size = create_bsa_directive.size();
         let span = tracing::Span::current();
         span.in_scope(|| {
-            let bsa_creation_dir = output_directory.join(BSA_CREATION_DIR.with(|p| p.to_owned()));
-            match create_bsa_directive {
-                CreateBSADirective::Ba2(ba2) => self::fallout_4::create_archive(bsa_creation_dir, ba2, |archive, options, output_path| {
-                    output_directory
-                        .join(output_path.into_path())
-                        .open_file_write()
-                        .context("opening file for writing")
-                        .and_then(|(output_path, output)| {
-                            archive
-                                .write(&mut tracing::Span::current().wrap_write(size, output), &options)
-                                .with_context(|| format!("writing ba2 (fallout 4 / starfield) file to {output_path:?}"))
-                        })
-                }),
-                CreateBSADirective::Bsa(bsa) => self::tes_4::create_archive(bsa_creation_dir, bsa, |archive, options, output_path| {
-                    output_directory
-                        .join(output_path.into_path())
-                        .open_file_write()
-                        .context("opening file for writing")
-                        .and_then(|(output_path, output)| {
-                            archive
-                                .write(&mut tracing::Span::current().wrap_write(size, output), &options)
-                                .with_context(|| format!("writing bsa file (skyrim and before) to {output_path:?}"))
-                        })
-                }),
-            }
+            output_directory
+                .join_create(&BSA_CREATION_DIR.with(|p| p.as_str().to_string()))
+                .context("creating bsa creation dir")
+                .and_then(|bsa_creation_dir| match create_bsa_directive {
+                    CreateBSADirective::Ba2(ba2) => self::fallout_4::create_archive(&bsa_creation_dir, ba2, |archive, options, output_path| {
+                        output_directory
+                            .case_insensitive()
+                            .join_case_insensitive(output_path)
+                            .and_then(|p| p.as_path().open_file_write())
+                            .context("opening file for writing")
+                            .and_then(|(output_path, output)| {
+                                archive
+                                    .write(&mut tracing::Span::current().wrap_write(size, output), &options)
+                                    .with_context(|| format!("writing ba2 (fallout 4 / starfield) file to {output_path:?}"))
+                            })
+                    }),
+                    CreateBSADirective::Bsa(bsa) => self::tes_4::create_archive(&bsa_creation_dir, bsa, |archive, options, output_path| {
+                        output_directory
+                            .case_insensitive()
+                            .join_case_insensitive(output_path)
+                            .and_then(|output| output.as_path().open_file_write())
+                            .context("opening file for writing")
+                            .and_then(|(output_path, output)| {
+                                archive
+                                    .write(&mut tracing::Span::current().wrap_write(size, output), &options)
+                                    .with_context(|| format!("writing bsa file (skyrim and before) to {output_path:?}"))
+                            })
+                    }),
+                })
         })
         .map(|_| size)
     }

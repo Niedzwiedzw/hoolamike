@@ -1,0 +1,23 @@
+[package]
+name = "case-insensitive-path"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio", "dep:futures"]
+
+[dependencies]
+tokio = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+anyhow.workspace = true
+derive_more = { workspace = true, features = ["full"] }
+extension-traits.workspace = true
+normalize-path.workspace = true
+serde.workspace = true
+tap.workspace = true
+typed-path.workspace = true

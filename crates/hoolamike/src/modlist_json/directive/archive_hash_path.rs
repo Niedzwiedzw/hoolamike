@@ -1,21 +1,25 @@
 use {
-    super::MaybeWindowsPath,
+    anyhow::Context,
+    case_insensitive_path::CaseInsensitivePathBuf,
     itertools::Itertools,
     nonempty::NonEmpty,
-    serde::{ser::Error as _, Deserialize, Serialize},
-    std::iter::{empty, once},
+    serde::{Deserialize, Serialize, ser::Error as _},
+    std::{
+        iter::{empty, once},
+        str::FromStr,
+    },
     tap::prelude::*,
 };
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArchiveHashPath {
     pub source_hash: String,
-    pub path: Vec<MaybeWindowsPath>,
+    pub path: Vec<CaseInsensitivePathBuf>,
 }
 
 impl std::fmt::Debug for ArchiveHashPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.pipe(|Self { source_hash, path }| write!(f, "[{source_hash}] {}", path.iter().map(|p| &p.0).join(" -> ")))
+        self.pipe(|Self { source_hash, path }| write!(f, "[{source_hash}] {}", path.iter().map(|p| p.as_original_path()).join(" -> ")))
     }
 }
 
@@ -42,9 +46,13 @@ impl<'de> Deserialize<'de> for ArchiveHashPath {
     where
         D: serde::Deserializer<'de>,
     {
-        NonEmpty::<String>::deserialize(deserializer).map(|NonEmpty { head, tail }| ArchiveHashPath {
-            source_hash: head,
-            path: tail.into_iter().map(MaybeWindowsPath).collect(),
+        NonEmpty::<String>::deserialize(deserializer).and_then(|NonEmpty { head, tail }| {
+            tail.into_iter()
+                .map(|p| CaseInsensitivePathBuf::from_str(&p))
+                .collect::<anyhow::Result<Vec<_>>>()
+                .context("parsing archive hash path")
+                .map_err(serde::de::Error::custom)
+                .map(|path| ArchiveHashPath { source_hash: head, path })
         })
     }
 }

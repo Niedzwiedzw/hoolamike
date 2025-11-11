@@ -1,39 +1,29 @@
 use {
-    super::{count_progress_style, try_optimize_memory_mapping, PathReadWrite},
+    super::{PathReadWrite, count_progress_style, try_optimize_memory_mapping},
     crate::{
         modlist_json::{
+            BA2DX10EntryChunk,
             directive::create_bsa_directive::ba2::{BA2DX10Entry, BA2FileEntry, Ba2, DirectiveStateData, FileState},
             type_guard::WithTypeGuard,
-            BA2DX10EntryChunk,
         },
-        utils::MaybeWindowsPath,
+        path::{CaseInsensitivePathBuf, IntoUtf8CaseInsensitivePath, Utf8TypedPathToPlatformExt},
+        utils::ExistingPathRead,
     },
     anyhow::{Context, Result},
     ba2::{
+        BString, Borrowed, CompressionResult, ReaderWithOptions,
         fo4::{
-            Archive,
-            ArchiveKey,
-            ArchiveOptions,
-            ChunkCompressionOptions,
-            CompressionFormat,
-            CompressionLevel,
-            File,
-            FileHeader,
-            FileReadOptions,
-            Format,
+            Archive, ArchiveKey, ArchiveOptions, ChunkCompressionOptions, CompressionFormat, CompressionLevel, File, FileHeader, FileReadOptions, Format,
             Version as ArchiveVersion,
         },
-        BString,
-        Borrowed,
-        CompressionResult,
-        ReaderWithOptions,
     },
+    case_insensitive_path::ExistingPath,
     rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
     std::path::{Path, PathBuf},
     tap::prelude::*,
     tracing::{info_span, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
-    typed_path::Utf8TypedPath,
+    typed_path::{Utf8TypedPath, Utf8WindowsPath, Utf8WindowsPathBuf},
 };
 
 #[derive(derive_more::From)]
@@ -122,28 +112,20 @@ impl LazyArchiveFile<BA2DX10Entry> {
 }
 
 #[instrument]
-pub(super) fn create_key<'a>(for_path: MaybeWindowsPath) -> Result<ArchiveKey<'a>> {
+pub(super) fn create_key<'a>(for_path: &Utf8WindowsPath) -> ArchiveKey<'a> {
     for_path
-        .0
-        .pipe_deref(Utf8TypedPath::derive)
-        .with_windows_encoding_checked()
-        .context("could not convert path to windows path")
-        .map(|path| path.normalize())
-        .map(|path| path.with_windows_encoding())
-        .map(|path| {
-            path.as_str()
-                .pipe(Path::new)
-                .as_os_str()
-                .as_encoded_bytes()
-                .conv::<BString>()
-                .tap(|encoded| tracing::debug!("encoded {for_path:?} as [{encoded}]"))
-                .conv::<ArchiveKey>()
-        })
+        .as_str()
+        .pipe(Path::new)
+        .as_os_str()
+        .as_encoded_bytes()
+        .conv::<BString>()
+        .tap(|encoded| tracing::debug!("encoded {for_path:?} as [{encoded}]"))
+        .conv::<ArchiveKey>()
 }
 
 #[instrument(skip(handle_archive, file_states))]
-pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) -> Result<()>>(
-    temp_bsa_dir: PathBuf,
+pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, CaseInsensitivePathBuf) -> Result<()>>(
+    temp_bsa_dir: &ExistingPath,
     Ba2 {
         hash: _,
         size: _,
@@ -172,7 +154,10 @@ pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) 
         8 => ArchiveVersion::v8,
         other => anyhow::bail!("unsuppored archive version: {other}"),
     };
-    let temp_id_dir = temp_bsa_dir.join(temp_id);
+    let temp_id_dir = temp_bsa_dir
+        .case_insensitive()
+        .join(temp_id)
+        .context("temp id is wrong")?;
     let reading_bsa_entries = info_span!("creating_bsa_entries", count=%file_states.len())
         .entered()
         .tap(|pb| {
@@ -183,19 +168,37 @@ pub fn create_archive<F: FnOnce(&Archive<'_>, ArchiveOptions, MaybeWindowsPath) 
         .into_par_iter()
         .map(move |file_state| match file_state {
             FileState::BA2File(ba2_file_entry) => temp_id_dir
-                .join(ba2_file_entry.path.clone().into_path())
-                .pipe(|path| path.open_file_read())
+                .join_case_insensitive(ba2_file_entry.path.clone())
+                .and_then(|path| path.try_exists().and_then(|path| path.open_file_read()))
                 .and_then(|(_path, file)| LazyArchiveFile::new(&file, ba2_file_entry.clone()).map(LazyArchiveKind::from))
-                .and_then(|file| ba2_file_entry.pipe(|BA2FileEntry { path, .. }| create_key(path).map(|key| (key, file)))),
+                .and_then(|file| {
+                    ba2_file_entry.pipe(|BA2FileEntry { path, .. }| {
+                        path.as_original_path()
+                            .into_windows_encoding_checked()
+                            .map(|path| create_key(&path.as_path()))
+                            .map(|key| (key, file))
+                    })
+                }),
             FileState::BA2DX10Entry(ba2_dx10_entry) => temp_id_dir
-                .join(ba2_dx10_entry.path.clone().into_path())
-                .open_file_read()
+                .join_case_insensitive(ba2_dx10_entry.path.clone())
+                .and_then(|ba2_dx10_entry| {
+                    ba2_dx10_entry
+                        .try_exists()
+                        .and_then(|path| path.open_file_read())
+                })
                 .and_then(|(path, file)| {
                     LazyArchiveFile::new(&file, ba2_dx10_entry.clone())
                         .with_context(|| format!("opening file at [{path:?}]"))
                         .map(LazyArchiveKind::from)
                 })
-                .and_then(|file| ba2_dx10_entry.pipe(|BA2DX10Entry { path, .. }| create_key(path).map(|key| (key, file)))),
+                .and_then(|file| {
+                    ba2_dx10_entry.pipe(|BA2DX10Entry { path, .. }| {
+                        path.as_original_path()
+                            .into_windows_encoding_checked()
+                            .map(|path| create_key(&path.as_path()))
+                            .map(|key| (key, file))
+                    })
+                }),
         })
         .inspect(|_| reading_bsa_entries.pb_inc(1))
         .collect::<Result<Vec<_>>>()

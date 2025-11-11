@@ -1,7 +1,7 @@
 use {
     anyhow::{Context, Result},
     futures::{FutureExt, TryFuture, TryFutureExt},
-    std::future::{ready, Future},
+    std::future::{Future, ready},
     tap::prelude::*,
     tracing::trace,
 };

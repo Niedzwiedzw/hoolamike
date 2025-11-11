@@ -8,10 +8,10 @@ use {
     chrono::{DateTime, Utc},
     futures::TryFutureExt,
     reqwest::{
-        header::{HeaderMap, HeaderValue},
         Client,
         ClientBuilder,
         Response,
+        header::{HeaderMap, HeaderValue},
     },
     serde::{Deserialize, Serialize},
     std::{

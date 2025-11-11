@@ -1,22 +1,22 @@
 use {
     crate::{
-        compression::{preheated_archive::PreheatedArchive, ProcessArchive, SeekWithTempFileExt},
+        compression::{ProcessArchive, SeekWithTempFileExt, preheated_archive::PreheatedArchive},
         config_file::HoolamikeConfig,
         modlist_json::GameName,
-        progress_bars_v2::{count_progress_style, IndicatifWrapIoExt},
-        utils::{scoped_temp_file, MaybeWindowsPath, PathReadWrite, ReadableCatchUnwindExt},
+        progress_bars_v2::{IndicatifWrapIoExt, count_progress_style},
+        utils::{ExistingPathRead, PathReadWrite, ReadableCatchUnwindExt, scoped_temp_file},
     },
     anyhow::{Context, Result},
+    case_insensitive_path::{CaseInsensitivePathBuf, PathExistsUtf8Ext},
     handle_asset::AssetContext,
     itertools::Itertools,
     manifest_file::{
+        Package,
         asset::{FullLocation, LocationIndex, MaybeFullLocation},
         kind_guard::WithKindGuard,
         location::{Location, ReadArchiveLocation, WriteArchiveLocation},
         variable::Variable,
-        Package,
     },
-    normalize_path::NormalizePath,
     num::ToPrimitive,
     rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
     serde::{Deserialize, Serialize},
@@ -26,6 +26,7 @@ use {
         convert::identity,
         io::{BufReader, Read},
         path::{Path, PathBuf},
+        str::FromStr,
         sync::Arc,
     },
     tap::prelude::*,
@@ -71,7 +72,7 @@ pub struct RepackingContext {
 
 #[derive(Debug)]
 struct LazyArchive {
-    files: Vec<(PathBuf, TempPath)>,
+    files: Vec<(CaseInsensitivePathBuf, TempPath)>,
     #[allow(dead_code)]
     archive_metadata: WriteArchiveLocation,
 }
@@ -87,7 +88,7 @@ impl LazyArchive {
     }
 
     #[instrument(skip(self), fields(current_count=self.files.len()))]
-    fn insert(&mut self, archive_path: PathBuf, file: TempPath) {
+    fn insert(&mut self, archive_path: CaseInsensitivePathBuf, file: TempPath) {
         debug!("scheduling file into archive");
         self.files.push((archive_path, file))
     }
@@ -180,7 +181,7 @@ impl MaybeFullLocation {
 
 pub struct LazyArchiveChunk {
     target: WriteArchiveLocation,
-    key: PathBuf,
+    key: CaseInsensitivePathBuf,
     buffer: TempPath,
 }
 
@@ -196,20 +197,19 @@ impl FullLocation {
                 Location::Folder(folder) => folder
                     .inner
                     .value
-                    .clone()
-                    .pipe(MaybeWindowsPath)
-                    .pipe(MaybeWindowsPath::into_path)
-                    .pipe(|folder| folder.join(self.path.0.into_path()).normalize())
-                    .open_file_write()
+                    .pipe_deref(CaseInsensitivePathBuf::from_str)
+                    .and_then(|file| file.as_path().open_file_write())
                     .and_then(|(target_path, mut target_file)| {
                         std::io::copy(from_reader, &mut target_file)
                             .with_context(|| format!("copying into [{target_path:#?}]"))
                             .map(|wrote| tracing::info!(?target_path, "wrote [{wrote}bytes]"))
                     })
                     .map(|_| None),
-                Location::ReadArchive(read_archive) => anyhow::bail!("cannot insert into Location::ReadArchive({read_archive:#?})"),
+                Location::ReadArchive(read_archive) => {
+                    anyhow::bail!("cannot insert into Location::ReadArchive({read_archive:#?})")
+                }
                 Location::WriteArchive(write_archive) => {
-                    let archive_path = self.path.0.into_path().normalize();
+                    let archive_path = self.path.0.clone();
                     scoped_temp_file()
                         .and_then(|mut buffer| {
                             std::io::copy(from_reader, &mut buffer)
@@ -232,7 +232,7 @@ impl FullLocation {
             Some(preheated) => {
                 let source = preheated
                     .paths
-                    .get(&self.path.clone().0.into_path())
+                    .get(&self.path.clone().0)
                     .with_context(|| format!("no file [{:?}] in archive [{:#?}]", self.path, self.location))?;
                 source
                     .open_file_read()
@@ -249,25 +249,27 @@ impl FullLocation {
                         Location::Folder(folder) => folder
                             .inner
                             .value
-                            .clone()
-                            .pipe(MaybeWindowsPath)
-                            .pipe(MaybeWindowsPath::into_path)
-                            .pipe(|path| path.join(self.path.0.into_path()).normalize())
-                            .pipe(|source| {
-                                source
-                                    .open_file_read()
-                                    .map(|(_, file)| Box::new(file) as Box<dyn Read>)
+                            .pipe_deref(CaseInsensitivePathBuf::from_str)
+                            .and_then(|path| path.join(self.path.0.as_path().as_str()))
+                            .map(|p| p.normalize())
+                            .and_then(|source| {
+                                source.try_exists().and_then(|exists| {
+                                    exists
+                                        .open_file_read()
+                                        .map(|(_, file)| Box::new(file) as Box<dyn Read>)
+                                })
                             }),
                         Location::ReadArchive(WithKindGuard {
                             inner: ReadArchiveLocation { name: _, value },
                             ..
-                        }) => {
-                            let value = MaybeWindowsPath(value.clone()).into_path().normalize();
-                            crate::compression::ArchiveHandle::with_guessed(value.as_path(), value.extension(), |mut archive| {
-                                archive.get_handle(&self.path.clone().0.into_path())
+                        }) => CaseInsensitivePathBuf::from_str(value)
+                            .and_then(|value| value.try_exists())
+                            .and_then(|value| {
+                                crate::compression::ArchiveHandle::with_guessed(value.as_ref(), value.as_path().extension(), |mut archive| {
+                                    archive.get_handle(&self.path.clone().0)
+                                })
                             })
-                            .map(|handle| Box::new(handle) as Box<dyn Read>)
-                        }
+                            .map(|handle| Box::new(handle) as Box<dyn Read>),
                         Location::WriteArchive(write_archive) => anyhow::bail!("cannot write into this, right? => Location::WriteArchive({write_archive:#?})"),
                     })
                     .with_context(|| format!("when converting location into reader:\n[{location:#?}]"))
@@ -298,6 +300,8 @@ pub fn install(CliConfig { contains }: CliConfig, hoolamike_config: HoolamikeCon
         })
         .context("resolving path to FalloutNV.exe based on hoolamike config")?;
 
+    let path_to_ttw_mpi_file = path_to_ttw_mpi_file.exists_utf8()?;
+
     let manifest_file::Manifest {
         package,
         variables,
@@ -307,10 +311,10 @@ pub fn install(CliConfig { contains }: CliConfig, hoolamike_config: HoolamikeCon
         file_attrs,
         post_commands,
         assets,
-    } = crate::compression::bethesda_archive::BethesdaArchive::open(path_to_ttw_mpi_file)
+    } = crate::compression::bethesda_archive::BethesdaArchive::open(&path_to_ttw_mpi_file)
         .and_then(|mut archive| {
             archive
-                .get_handle(Path::new(MANIFEST_PATH))
+                .get_handle(&CaseInsensitivePathBuf::from_str(MANIFEST_PATH).expect("bad encoding of manifest path"))
                 .context("extracting the manifest out of MPI file")
         })
         .map(BufReader::new)
@@ -329,7 +333,7 @@ pub fn install(CliConfig { contains }: CliConfig, hoolamike_config: HoolamikeCon
         .with_context(|| format!("extracting manifest out of [{path_to_ttw_mpi_file:?}]"))?;
     info!(package=%serde_json::to_string_pretty(&package).unwrap_or_else(|e| format!("[{e:#?}]")), "got manifest file");
 
-    let preheated_mpi_file = PreheatedArchive::from_archive_concurrent(path_to_ttw_mpi_file, 64)
+    let preheated_mpi_file = PreheatedArchive::from_archive_concurrent(&path_to_ttw_mpi_file, 64)
         .context("preheating mpi file")
         .map(Arc::new)?;
 
@@ -447,8 +451,11 @@ pub fn install(CliConfig { contains }: CliConfig, hoolamike_config: HoolamikeCon
                                         .into_iter()
                                         .flatten()
                                         .map(|(source, ReadArchiveLocation { name: _, value })| {
-                                            let archive_path = MaybeWindowsPath(value).into_path().normalize();
-                                            PreheatedArchive::from_archive_concurrent(&archive_path, 128).map(|preheated| (source, preheated))
+                                            CaseInsensitivePathBuf::from_str(&value)
+                                                .and_then(|archive_path| archive_path.try_exists())
+                                                .and_then(|archive_path| {
+                                                    PreheatedArchive::from_archive_concurrent(&archive_path, 128).map(|preheated| (source, preheated))
+                                                })
                                         })
                                         .collect::<Result<BTreeMap<_, _>>>()
                                         .context("preheating failed")
@@ -512,8 +519,8 @@ pub fn install(CliConfig { contains }: CliConfig, hoolamike_config: HoolamikeCon
                                                     .try_for_each(|descriptor| {
                                                         build_bsa::build_bsa(descriptor, |archive, options, output_path| {
                                                             output_path
-                                                                .into_path()
                                                                 .normalize()
+                                                                .as_path()
                                                                 .open_file_write()
                                                                 .and_then(|(output_path, output)| {
                                                                     archive

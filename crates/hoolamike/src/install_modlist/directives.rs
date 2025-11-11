@@ -4,23 +4,24 @@ use {
         downloaders::WithArchiveDescriptor,
         install_modlist::io_progress_style,
         modlist_json::{
+            DirectiveKind,
             directive::{
-                create_bsa_directive::{CreateBSADirective, CreateBSADirectiveKind},
                 ArchiveHashPath,
                 FromArchiveDirective,
                 InlineFileDirective,
                 PatchedFromArchiveDirective,
                 RemappedInlineFileDirective,
                 TransformedTextureDirective,
+                create_bsa_directive::{CreateBSADirective, CreateBSADirectiveKind},
             },
-            DirectiveKind,
         },
         progress_bars_v2::count_progress_style,
         tokio_runtime_multi,
-        utils::{MaybeWindowsPath, PathReadWrite},
+        utils::PathReadWrite,
     },
     anyhow::{Context, Result},
-    futures::{FutureExt, Stream, StreamExt},
+    case_insensitive_path::{CaseInsensitivePathBuf, ExistingPathBuf, PathExistsUtf8Ext},
+    futures::{FutureExt, Stream, StreamExt, TryFutureExt},
     itertools::Itertools,
     nonempty::NonEmpty,
     rayon::iter::{IntoParallelIterator, ParallelIterator},
@@ -33,7 +34,7 @@ use {
         sync::Arc,
     },
     tap::prelude::*,
-    tracing::{info_span, instrument, Instrument},
+    tracing::{Instrument, info_span, instrument},
     tracing_indicatif::span_ext::IndicatifSpanExt,
     transformed_texture::TexconvWineState,
     wabbajack_file_handle::WabbajackFileHandle,
@@ -47,7 +48,7 @@ pub(crate) fn create_file_all(path: &Path) -> Result<std::fs::File> {
         .map(|(_, f)| f)
 }
 
-pub type DownloadSummary = Arc<BTreeMap<String, WithArchiveDescriptor<PathBuf>>>;
+pub type DownloadSummary = Arc<BTreeMap<String, WithArchiveDescriptor<CaseInsensitivePathBuf>>>;
 
 pub mod create_bsa;
 pub mod from_archive;
@@ -162,11 +163,14 @@ fn is_whitelisted_by_path(path: &Path) -> bool {
     )
 }
 
-pub async fn validate_hash_with_overrides(path: PathBuf, hash: String, size: u64) -> Result<PathBuf> {
-    match is_whitelisted_by_path(&path) {
-        true => super::download_cache::validate_file_size(path, size).await,
-        false => validate_hash_wabbajack(path, hash).await,
-    }
+pub async fn validate_hash_with_overrides(path: ExistingPathBuf, hash: String, size: u64) -> Result<ExistingPathBuf> {
+    path.as_path()
+        .pipe(std::path::Path::new)
+        .pipe(async |os_path| match is_whitelisted_by_path(os_path) {
+            true => super::download_cache::validate_file_size(path.clone(), size).await,
+            false => validate_hash_wabbajack(path.clone(), hash).await,
+        })
+        .await
 }
 
 #[derive(derive_more::From, Clone, Debug)]
@@ -200,10 +204,10 @@ pub mod nested_archive_directives;
 
 #[extension_traits::extension(pub (crate) trait ResolvePathExt)]
 impl DownloadSummary {
-    fn resolve_archive_path(&self, ArchiveHashPath { source_hash, path }: &ArchiveHashPath) -> Result<NonEmpty<PathBuf>> {
+    fn resolve_archive_path(&self, ArchiveHashPath { source_hash, path }: &ArchiveHashPath) -> Result<NonEmpty<CaseInsensitivePathBuf>> {
         self.get(source_hash)
             .with_context(|| format!("no [{source_hash}] in downloads"))
-            .map(|parent| NonEmpty::new(parent.inner.clone()).tap_mut(|resolved| resolved.extend(path.iter().cloned().map(MaybeWindowsPath::into_path))))
+            .map(|parent| NonEmpty::new(parent.inner.clone()).tap_mut(|resolved| resolved.extend(path.clone())))
     }
 }
 
@@ -248,7 +252,7 @@ pub mod preheat_archive_hash_paths;
 
 impl DirectivesHandler {
     #[allow(clippy::new_without_default)]
-    pub fn new(config: DirectivesHandlerConfig, sync_summary: Vec<WithArchiveDescriptor<PathBuf>>) -> Self {
+    pub fn new(config: DirectivesHandlerConfig, sync_summary: Vec<WithArchiveDescriptor<ExistingPathBuf>>) -> anyhow::Result<Self> {
         let DirectivesHandlerConfig {
             wabbajack_file,
             output_directory,
@@ -256,16 +260,25 @@ impl DirectivesHandler {
             downloads_directory,
             texconv_wine_state,
         } = config.clone();
+        let output_directory = output_directory
+            .create_dir()
+            .context("creating output directory")?;
+        let game_directory = game_directory
+            .exists_utf8()
+            .context("checking if game directory exists")?;
+        let downloads_directory = downloads_directory
+            .create_dir()
+            .context("creating downloads dir")?;
         let download_summary: DownloadSummary = sync_summary
             .into_iter()
-            .map(|s| (s.descriptor.hash.clone(), s))
+            .map(|s| (s.descriptor.hash.clone(), s.map_t(|s| s.case_insensitive())))
             .collect::<BTreeMap<_, _>>()
             .pipe(Arc::new);
 
         Self {
             config,
             create_bsa: create_bsa::CreateBSAHandler {
-                output_directory: output_directory.clone(),
+                output_directory: output_directory.create_dir()?,
             },
             from_archive: from_archive::FromArchiveHandler {
                 output_directory: output_directory.clone(),
@@ -295,6 +308,7 @@ impl DirectivesHandler {
             },
             download_summary,
         }
+        .pipe(Ok)
     }
 
     #[allow(clippy::unnecessary_literal_unwrap)]
@@ -340,9 +354,19 @@ impl DirectivesHandler {
                     Directive::RemappedInlineFile(RemappedInlineFileDirective { hash, size, to, .. }) => (hash.clone(), *size, to.clone()),
                     Directive::TransformedTexture(TransformedTextureDirective { hash, size, to, .. }) => (hash.clone(), *size, to.clone()),
                 }
-                .pipe(|(hash, size, to)| (hash, size, output_directory.join(to.into_path())))
+                .pipe(|(hash, size, to)| {
+                    (
+                        hash,
+                        size,
+                        output_directory
+                            .case_insensitive()
+                            .join_case_insensitive(to),
+                    )
+                })
                 .pipe(move |(hash, size, to)| {
-                    validate_hash_with_overrides(to.clone(), hash, size)
+                    to.pipe(ready)
+                        .and_then(async |to| to.try_exists_async().await)
+                        .and_then(move |to| validate_hash_with_overrides(to, hash, size))
                         .map(move |res| match res {
                             Ok(_) => DirectiveStatus::Completed(size),
                             Err(reason) => DirectiveStatus::NeedsRebuild { reason, directive },
@@ -467,26 +491,28 @@ impl DirectivesHandler {
                                 const DIRECTIVE_CHUNK_SIZE: u64 = 6 * 1024 * 1024 * 1024; // 6GiB
                                 let download_summary = self.download_summary.clone();
                                 info_span!("nested_archive", total_size=%directives.len(), estimated_chunk_size_bytes=%DIRECTIVE_CHUNK_SIZE).in_scope(|| {
-                                    crate::utils::chunk_while(directives, |d| d.iter().map(|d| d.directive_size()).sum::<u64>() > DIRECTIVE_CHUNK_SIZE)
-                                        .into_par_iter()
-                                        .flat_map({
-                                            cloned![manager, download_summary];
-                                            move |directives| {
-                                                info_span!("handling nested archive directives chunk", chunk_size=%directives.len()).in_scope(|| {
-                                                    nested_archive_directives::handle_nested_archive_directives(
-                                                        manager.clone(),
-                                                        download_summary.clone(),
-                                                        directives,
-                                                    )
-                                                    .collect_vec()
-                                                })
-                                            }
-                                        })
-                                        .inspect(|size| {
-                                            if let Ok(size) = size {
-                                                handle_directives.pb_inc(*size)
-                                            }
-                                        })
+                                    crate::utils::chunk_while(directives, |d: &[ArchivePathDirective]| {
+                                        d.iter().map(|d| d.directive_size()).sum::<u64>() > DIRECTIVE_CHUNK_SIZE
+                                    })
+                                    .into_par_iter()
+                                    .flat_map({
+                                        cloned![manager, download_summary];
+                                        move |directives| {
+                                            info_span!("handling nested archive directives chunk", chunk_size=%directives.len()).in_scope(|| {
+                                                nested_archive_directives::handle_nested_archive_directives(
+                                                    manager.clone(),
+                                                    download_summary.clone(),
+                                                    directives,
+                                                )
+                                                .collect_vec()
+                                            })
+                                        }
+                                    })
+                                    .inspect(|size| {
+                                        if let Ok(size) = size {
+                                            handle_directives.pb_inc(*size)
+                                        }
+                                    })
                                 })
                             })
                             .collect::<Result<Vec<_>>>()

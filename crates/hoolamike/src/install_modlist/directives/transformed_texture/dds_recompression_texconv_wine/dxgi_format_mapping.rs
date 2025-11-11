@@ -1,6 +1,6 @@
 use {
     crate::modlist_json::image_format::DXGIFormat,
-    anyhow::{anyhow, Result},
+    anyhow::{Result, anyhow},
 };
 
 pub fn map_dxgi_format(format: DXGIFormat) -> Result<&'static str> {

@@ -1,5 +1,5 @@
 use {
-    crate::utils::MaybeWindowsPath,
+    crate::path::CaseInsensitivePathBuf,
     anyhow::{Context, Result},
     serde::{Deserialize, Serialize},
     std::collections::BTreeMap,
@@ -56,7 +56,7 @@ pub struct Tags(u16);
 pub struct LocationIndex(pub u8);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display)]
-pub struct FileName(pub MaybeWindowsPath);
+pub struct FileName(pub CaseInsensitivePathBuf);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -145,14 +145,44 @@ impl Asset {
             Asset::XwmaFuz(_) => unimplemented!("Asset::XwmaFuz(_)"),
         }
     }
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> String {
         match self {
-            Asset::Copy(copy_asset) => copy_asset.source.path.0 .0.as_str(),
-            Asset::New(new_asset) => new_asset.source.path.0 .0.as_str(),
-            Asset::Patch(patch_asset) => patch_asset.source.path.0 .0.as_str(),
-            Asset::XwmaFuz(_) => "Asset::XwmaFuz IS NOT IMPLEMENTED",
-            Asset::OggEnc2(ogg_enc2_asset) => ogg_enc2_asset.source.path.0 .0.as_str(),
-            Asset::AudioEnc(audio_enc_asset) => audio_enc_asset.source.path.0 .0.as_str(),
+            Asset::Copy(copy_asset) => copy_asset
+                .source
+                .path
+                .0
+                .as_original_path()
+                .as_str()
+                .to_string(),
+            Asset::New(new_asset) => new_asset
+                .source
+                .path
+                .0
+                .as_original_path()
+                .as_str()
+                .to_string(),
+            Asset::Patch(patch_asset) => patch_asset
+                .source
+                .path
+                .0
+                .as_original_path()
+                .as_str()
+                .to_string(),
+            Asset::XwmaFuz(_) => "Asset::XwmaFuz IS NOT IMPLEMENTED".to_string(),
+            Asset::OggEnc2(ogg_enc2_asset) => ogg_enc2_asset
+                .source
+                .path
+                .0
+                .as_original_path()
+                .as_str()
+                .to_string(),
+            Asset::AudioEnc(audio_enc_asset) => audio_enc_asset
+                .source
+                .path
+                .0
+                .as_original_path()
+                .as_str()
+                .to_string(),
         }
     }
 }

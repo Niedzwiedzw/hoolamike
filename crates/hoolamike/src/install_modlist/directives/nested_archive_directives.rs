@@ -1,11 +1,11 @@
 use {
     super::{
-        preheat_archive_hash_paths::PreheatedArchiveHashPaths,
         ArchivePathDirective,
         DirectivesHandler,
         DownloadSummary,
         IteratorTryFlatMapExt,
         ResolvePathExt,
+        preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     },
     anyhow::{Context, Result},
     std::{iter::once, sync::Arc},

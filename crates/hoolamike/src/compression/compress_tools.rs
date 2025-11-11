@@ -1,15 +1,14 @@
 use {
     super::{ProcessArchive, *},
     crate::{
-        compression::case_insensitive_lookup::{case_insensitive_string::CaseInsensitiveString, CaseInsenitiveBasicListing},
-        progress_bars_v2::io_progress_style,
-        utils::PathFileNameOrEmpty,
+        compression::case_insensitive_lookup::CaseInsenitiveBasicListing, path::PathBuf, progress_bars_v2::io_progress_style, utils::PathFileNameOrEmpty,
+        utils::StreamLenExt,
     },
     ::compress_tools::*,
     anyhow::{Context, Result},
     itertools::Itertools,
     num::ToPrimitive,
-    std::{io::Seek, path::PathBuf},
+    std::{collections::BTreeSet, io::Seek, str::FromStr},
     tracing_indicatif::span_ext::IndicatifSpanExt,
 };
 
@@ -27,14 +26,11 @@ impl ArchiveHandle {
             .map(|_| Self(file))
     }
 
-    pub fn list_paths_with_originals(&mut self) -> Result<case_insensitive_lookup::CaseInsenitiveBasicListing> {
+    pub fn list_paths_with_originals(&mut self) -> Result<CaseInsenitiveBasicListing> {
         self.0.rewind().context("rewinding file").and_then(|_| {
             list_archive_files(&mut self.0)
                 .context("listing archive")
-                .map(|e| {
-                    e.into_iter()
-                        .pipe(CaseInsenitiveBasicListing::from_string_paths)
-                })
+                .and_then(|e| e.into_iter().pipe(CaseInsenitiveBasicListing::from_paths))
         })
     }
 }
@@ -42,7 +38,7 @@ impl ArchiveHandle {
 impl ProcessArchive for ArchiveHandle {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
         self.list_paths_with_originals()
-            .map(|e| e.keys().map(|k| k.as_path()).collect_vec())
+            .map(|e| e.into_iter().map(|(v, ())| v).collect_vec())
     }
 
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
@@ -53,7 +49,14 @@ impl ProcessArchive for ArchiveHandle {
                 compress_tools::ArchiveIteratorBuilder::new(&mut self.0)
                     .filter({
                         cloned![validated_paths];
-                        move |e, _| validated_paths.contains_key(&e.into())
+                        move |e, _| {
+                            CaseInsensitivePathBuf::from_str(e)
+                                .map(|case_insensitive| validated_paths.contains_key(&case_insensitive))
+                                .tap_err(|e| {
+                                    tracing::error!("archive entry could not be parsed:\n{e:?}");
+                                })
+                                .unwrap_or(false)
+                        }
                     })
                     .build()
                     .context("building archive iterator")
@@ -61,23 +64,21 @@ impl ProcessArchive for ArchiveHandle {
                         iterator
                             .try_fold((vec![], info_span!("current_file").entered()), |(mut acc, span), entry| match entry {
                                 ArchiveContents::StartOfEntry(entry_path_string, stat) => entry_path_string
-                                    .as_str()
-                                    .pipe(PathBuf::from)
-                                    .pipe(|entry_path| {
+                                    .pipe_deref(CaseInsensitivePathBuf::from_str)
+                                    .and_then(|entry_path| {
                                         drop(span);
-
                                         validated_paths
-                                            .remove(&entry_path.pipe_deref(CaseInsensitiveString::from_path))
+                                            .remove(&entry_path)
+                                            .map(|_| entry_path.clone())
                                             .with_context(|| format!("unrequested entry: {entry_path:?}"))
                                             .and_then(|path| {
                                                 let temp_file = path
-                                                    .requested_path
-                                                    .as_ref()
+                                                    .as_path()
                                                     .named_tempfile_with_context()
                                                     .context("creating a temp file for output")?;
                                                 Ok((
                                                     acc.tap_mut(|acc| acc.push((path, stat.st_size, temp_file))),
-                                                    info_span!("current_file", entry_path=%entry_path.display())
+                                                    info_span!("current_file", entry_path=%entry_path)
                                                         .tap_mut(|pb| {
                                                             pb.pb_set_length(stat.st_size as u64);
                                                             pb.pb_set_style(&io_progress_style());
@@ -136,7 +137,7 @@ impl ProcessArchive for ArchiveHandle {
                     .map(|paths| {
                         paths
                             .into_iter()
-                            .map(|(path, _size, file)| (path.requested_path.as_path(), self::ArchiveFileHandle::CompressTools(file)))
+                            .map(|(path, _size, file)| (path, self::ArchiveFileHandle::CompressTools(file)))
                             .collect_vec()
                     })
                     .and_then(move |finished| {

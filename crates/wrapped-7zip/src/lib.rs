@@ -2,7 +2,7 @@
 
 pub use which;
 use {
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result, anyhow},
     list_output::{ListOutput, ListOutputEntry},
     std::{
         collections::BTreeMap,
@@ -91,6 +91,7 @@ impl Wrapped7Zip {
         build_command(&mut command);
         command
     }
+
     #[tracing::instrument(level = "TRACE")]
     pub fn query_file_info(&self, path: &Path) -> Result<String> {
         path.try_exists()
@@ -99,6 +100,7 @@ impl Wrapped7Zip {
             .map(|path| self.command(|c| c.arg("l").arg(path)))
             .and_then(|command| command.read_stdout_ok())
     }
+
     #[tracing::instrument(level = "TRACE")]
     pub fn open_file(&self, archive: &Path) -> Result<ArchiveHandle> {
         self.query_file_info(archive)

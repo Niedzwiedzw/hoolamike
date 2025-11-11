@@ -1,6 +1,7 @@
 use {
-    crate::utils::PathReadWrite,
+    crate::utils::ExistingPathRead,
     anyhow::{Context, Result},
+    case_insensitive_path::PathExistsUtf8Ext,
     hex_literal::hex,
     std::{
         io::{Read, Seek, SeekFrom, Write},
@@ -34,18 +35,21 @@ static NVVERPATCH2: &[&[u8]] = &[b"\x32\x32\x33\x38".as_slice(), b"\x32\x32\x33\
 
 fn sha1_hash_file(file: &Path) -> Result<Sha1Hash> {
     use sha1::Digest;
-    file.open_file_read()
-        .map(|(_, file)| std::io::BufReader::new(file))
-        .and_then(|mut file| {
-            let mut buf = vec![0u8; 8196];
-            let mut hasher = sha1::Sha1::new();
-            loop {
-                match file.read(&mut buf).context("reading chunk into a hasher")? {
-                    0 => break,
-                    size => hasher.update(&buf[..size]),
-                }
-            }
-            Ok(hasher.finalize())
+    file.exists_utf8()
+        .and_then(|file| {
+            file.open_file_read()
+                .map(|(_, file)| std::io::BufReader::new(file))
+                .and_then(|mut file| {
+                    let mut buf = vec![0u8; 8196];
+                    let mut hasher = sha1::Sha1::new();
+                    loop {
+                        match file.read(&mut buf).context("reading chunk into a hasher")? {
+                            0 => break,
+                            size => hasher.update(&buf[..size]),
+                        }
+                    }
+                    Ok(hasher.finalize())
+                })
         })
         .map(|h| h.into())
 }

@@ -2,20 +2,20 @@ use {
     super::ProcessArchive,
     crate::{
         compression::ArchiveHandleKind,
+        path::{ExistingPath, Path, PathBuf},
         progress_bars_v2::IndicatifWrapIoExt,
-        utils::{MaybeWindowsPath, PathFileNameOrEmpty, PathReadWrite, ReadableCatchUnwindExt},
+        utils::{ExistingPathRead, PathFileNameOrEmpty, ReadableCatchUnwindExt},
     },
     anyhow::{Context, Result},
     ba2::{BStr, ByteSlice, Reader},
     itertools::Itertools,
-    normalize_path::NormalizePath,
     std::{
         borrow::Cow,
         collections::{BTreeMap, BTreeSet},
         convert::identity,
         io::{Seek, Write},
         panic::catch_unwind,
-        path::{Path, PathBuf},
+        str::FromStr,
     },
     tap::prelude::*,
 };
@@ -31,8 +31,7 @@ fn bethesda_path_to_path(bethesda_path: &[u8]) -> Result<PathBuf> {
         .to_str()
         .with_context(|| format!("converting [{}] to utf8", String::from_utf8_lossy(bethesda_path)))
         .map(ToOwned::to_owned)
-        .map(MaybeWindowsPath)
-        .map(MaybeWindowsPath::into_path)
+        .and_then(|p| PathBuf::from_str(&p))
 }
 
 #[extension_traits::extension(pub trait Fallout4ArchiveCompat)]
@@ -65,7 +64,7 @@ fn try_utf8(bstr: &BStr) -> Cow<'_, str> {
 
 #[extension_traits::extension(pub trait Tes4ArchiveCompat)]
 impl Tes4Archive<'_> {
-    fn list_paths_with_originals(&self) -> Vec<(PathBuf, (ba2::tes4::ArchiveKey<'_>, ba2::tes4::DirectoryKey<'_>))> {
+    fn list_paths_with_originals(&self) -> Result<Vec<(PathBuf, (ba2::tes4::ArchiveKey<'_>, ba2::tes4::DirectoryKey<'_>))>> {
         self.0
             .iter()
             .flat_map(|(archive_key, directory)| {
@@ -75,25 +74,11 @@ impl Tes4Archive<'_> {
             })
             .map(|(archive_key, directory_key)| {
                 (archive_key.name().pipe(try_utf8), directory_key.name().pipe(try_utf8))
-                    .pipe(|(directory, filename)| {
-                        MaybeWindowsPath(directory.into()).into_path().join({
-                            let filename: &str = filename.as_ref();
-                            filename
-                        })
-                    })
-                    .pipe(|path| (path.normalize(), (archive_key, directory_key)))
+                    .pipe(|(directory, filename)| PathBuf::from_str(directory.as_ref()).and_then(|directory| directory.join(filename)))
+                    .map(|path| (path, (archive_key, directory_key)))
             })
-            .collect::<Vec<_>>()
+            .collect::<Result<Vec<_>>>()
     }
-}
-
-fn make_case_insensitive(path: &Path) -> PathBuf {
-    path.display()
-        .to_string()
-        .to_lowercase()
-        .pipe(MaybeWindowsPath)
-        .pipe(MaybeWindowsPath::into_path)
-        .normalize()
 }
 
 impl super::ProcessArchive for Fallout4Archive<'_> {
@@ -116,9 +101,10 @@ impl super::ProcessArchive for Fallout4Archive<'_> {
                     .map(|path| {
                         source_paths
                             .remove(*path)
-                            .with_context(|| format!("path [{}] not found in [{:#?}]", path.display(), source_paths.keys().collect_vec()))
+                            .with_context(|| format!("path [{path}] not found in [{:#?}]", source_paths.keys().collect_vec()))
                             .and_then(|repr| {
-                                path.named_tempfile_with_context()
+                                path.as_path()
+                                    .named_tempfile_with_context()
                                     .context("creating temporary file for output")
                                     .map(|output| (repr, output))
                             })
@@ -152,8 +138,8 @@ impl super::ProcessArchive for Fallout4Archive<'_> {
                             })
                             .context("extracting fallout 4 bsa")
                             .map(super::ArchiveFileHandle::Bethesda)
-                            .map(|handle| (PathBuf::from(path), handle))
-                            .with_context(|| format!("getting file handle for [{}] out of derived paths [{:#?}]", path.display(), paths))
+                            .map(|handle| ((*path).clone(), handle))
+                            .with_context(|| format!("getting file handle for [{}] out of derived paths [{:#?}]", path, paths))
                             .context("extracting archive handle")
                     })
                     .collect::<Result<Vec<_>>>()
@@ -166,9 +152,9 @@ impl super::ProcessArchive for Fallout4Archive<'_> {
 impl super::ProcessArchive for Tes4Archive<'_> {
     fn list_paths(&mut self) -> Result<Vec<PathBuf>> {
         self.list_paths_with_originals()
-            .pipe(|paths| paths.into_iter().map(|(p, _)| p).collect::<Vec<_>>())
-            .pipe(Ok)
+            .map(|paths| paths.into_iter().map(|(p, _)| p).collect::<Vec<_>>())
     }
+
     fn get_many_handles(&mut self, paths: &[&Path]) -> Result<Vec<(PathBuf, super::ArchiveFileHandle)>> {
         let options = {
             let version = self.1.version();
@@ -177,21 +163,22 @@ impl super::ProcessArchive for Tes4Archive<'_> {
         paths
             .iter()
             .copied()
-            .map(make_case_insensitive)
             .collect::<BTreeSet<_>>()
             .pipe_ref_mut(move |paths| {
                 self.list_paths_with_originals()
-                    .into_iter()
-                    .map(|(p, k)| (make_case_insensitive(&p), k))
-                    .filter(|(path, _)| {
-                        paths.remove(path.as_path()).tap(|exists_in_archive| {
-                            if !*exists_in_archive {
-                                tracing::trace!(?path, "ignoring path")
-                            }
-                        })
+                    .map(|paths_with_originals| {
+                        paths_with_originals
+                            .into_iter()
+                            .filter(|(path, _)| {
+                                paths.remove(path).tap(|exists_in_archive| {
+                                    if !*exists_in_archive {
+                                        tracing::trace!(?path, "ignoring path")
+                                    }
+                                })
+                            })
+                            .collect_vec()
                     })
-                    .collect_vec()
-                    .pipe(|filtered| {
+                    .and_then(|filtered| {
                         filtered
                             .into_iter()
                             .map(|(path, (archive_key, directory_key))| {
@@ -205,7 +192,8 @@ impl super::ProcessArchive for Tes4Archive<'_> {
                                     })
                                     .context("reading archive entry")
                                     .and_then(move |file| {
-                                        path.named_tempfile_with_context()
+                                        path.as_path()
+                                            .named_tempfile_with_context()
                                             .context("creating temporary file for output")
                                             .and_then(|mut output| {
                                                 catch_unwind(|| {
@@ -228,12 +216,12 @@ impl super::ProcessArchive for Tes4Archive<'_> {
                                             .and_then(identity)
                                             .context("extracting fallout 4 bsa")
                                             .map(super::ArchiveFileHandle::Bethesda)
-                                            .with_context(|| format!("getting file handle for [{}] out of derived paths", path.display()))
+                                            .with_context(|| format!("getting file handle for [{path}] out of derived paths"))
                                             .map(|handle| (path, handle))
                                     })
                             })
+                            .collect::<Result<Vec<_>>>()
                     })
-                    .collect::<Result<Vec<_>>>()
                     .and_then(|extracted| {
                         paths
                             .is_empty()
@@ -278,7 +266,7 @@ impl ProcessArchive for BethesdaArchive<'_> {
 
 impl BethesdaArchive<'_> {
     #[tracing::instrument]
-    pub fn open(file: &Path) -> Result<Self> {
+    pub fn open(file: &ExistingPath) -> Result<Self> {
         file.open_file_read()
             .context("opening bethesda archive")
             .and_then(|(_path, mut archive)| {
@@ -286,11 +274,11 @@ impl BethesdaArchive<'_> {
                     .context("unrecognized format")
                     .and_then(|format| {
                         (match format {
-                            ba2::FileFormat::FO4 => ba2::fo4::Archive::read(file)
+                            ba2::FileFormat::FO4 => ba2::fo4::Archive::read(file.as_os_path())
                                 .context("opening fo4")
                                 .map(BethesdaArchive::Fallout4),
                             ba2::FileFormat::TES3 => anyhow::bail!("{format:?} is not supported"),
-                            ba2::FileFormat::TES4 => ba2::tes4::Archive::read(file)
+                            ba2::FileFormat::TES4 => ba2::tes4::Archive::read(file.as_os_path())
                                 .context("opening fo4")
                                 .map(BethesdaArchive::Tes4),
                         })

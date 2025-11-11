@@ -1,13 +1,13 @@
 use {
     dashmap::DashMap,
-    futures::{future::Shared, FutureExt},
+    futures::{FutureExt, future::Shared},
     std::{
-        future::{ready, Future},
+        future::{Future, ready},
         sync::Arc,
     },
     tap::prelude::*,
     tokio::task::JoinHandle,
-    tracing::{instrument, trace_span, Instrument},
+    tracing::{Instrument, instrument, trace_span},
 };
 
 pub struct CachedFutureQueue<K, V> {
@@ -100,8 +100,8 @@ mod tests {
     use {
         super::*,
         futures::{FutureExt, StreamExt, TryStreamExt},
-        tokio::time::{sleep, Duration},
-        tracing::{info, info_span, Instrument},
+        tokio::time::{Duration, sleep},
+        tracing::{Instrument, info, info_span},
     };
 
     #[test_log::test(tokio::test)]

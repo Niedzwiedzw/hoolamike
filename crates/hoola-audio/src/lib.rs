@@ -1,23 +1,22 @@
-#![feature(iter_collect_into)]
 #![allow(clippy::unit_arg)]
 
 use {
-    anyhow::{bail, Context, Result},
+    anyhow::{Context, Result, bail},
     clap::{Args, Parser, Subcommand},
-    itertools::{repeat_n, Itertools},
+    itertools::{Itertools, repeat_n},
     mp3lame_encoder::{Bitrate, DualPcm, MonoPcm},
     num::ToPrimitive,
     rubato::{FastFixedIn, FftFixedOut, PolynomialDegree, Resampler},
     std::{
         convert::identity,
         io::{BufWriter, Write},
-        num::{NonZeroU32, NonZeroU8, NonZeroUsize},
+        num::{NonZeroU8, NonZeroU32, NonZeroUsize},
         ops::Not,
         path::{Path, PathBuf},
     },
     symphonia::core::{
         audio::{SampleBuffer, SignalSpec},
-        codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL},
+        codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions},
         formats::{FormatReader, Packet},
         io::MediaSourceStream,
         probe::{Hint, ProbeResult},
@@ -270,19 +269,20 @@ impl DecodedChunk {
                 .into_iter()
                 .map(|chunk| {
                     buf.clear().pipe(|_| {
-                        chunk.collect_into(&mut buf).pipe(|chunk| {
-                            chunk
-                                .len()
-                                .eq(&channel_count)
-                                .then_some(chunk)
-                                .context("interleaved data does not contain all channels")
-                                .map(|chunk| {
-                                    chunk
-                                        .drain(..)
-                                        .map(|sample| sample / (channel_count as f32))
-                                        .sum::<f32>()
-                                })
-                        })
+                        buf.pipe_ref_mut(|buf| buf.extend(chunk).pipe(|_| buf))
+                            .pipe(|chunk| {
+                                chunk
+                                    .len()
+                                    .eq(&channel_count)
+                                    .then_some(chunk)
+                                    .context("interleaved data does not contain all channels")
+                                    .map(|chunk| {
+                                        chunk
+                                            .drain(..)
+                                            .map(|sample| sample / (channel_count as f32))
+                                            .sum::<f32>()
+                                    })
+                            })
                     })
                 })
                 .collect::<Result<Vec<f32>>>(),

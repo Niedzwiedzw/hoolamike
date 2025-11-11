@@ -1,9 +1,9 @@
 #![allow(clippy::unit_arg)]
-#![feature(seek_stream_len)]
-#![feature(path_add_extension)]
 
 use {
+    ::case_insensitive_path::{self as path},
     anyhow::{Context, Result},
+    case_insensitive_path::PathExistsUtf8Ext,
     clap::{Args, Parser, Subcommand, ValueEnum},
     modlist_data::ModlistSummary,
     modlist_json::{DirectiveKind, HumanUrl},
@@ -118,6 +118,20 @@ pub(crate) mod downloaders;
 pub(crate) mod error;
 pub(crate) mod helpers;
 pub(crate) mod install_modlist;
+// /// Surprisingly this is the most error-prone part of entire emulation
+// /// process - path need to be case-insensitive. Juggling between windows
+// /// and host encoding also brings a lot of headache. Hence it needs to be
+// /// solved on type-system level, no matter the cost
+// pub(crate) mod path;
+pub(crate) mod install_modlist_v2 {
+    pub mod modlist_file_structure {
+        use {crate::path::CaseInsensitivePathBuf, std::path::PathBuf};
+
+        pub struct ExpectedFile {
+            pub at_path: CaseInsensitivePathBuf,
+        }
+    }
+}
 pub(crate) mod modlist_data;
 pub(crate) mod modlist_json;
 pub(crate) mod octadiff_reader;
@@ -163,7 +177,7 @@ pub enum LoggingMode {
 fn setup_logging(logging_mode: LoggingMode) -> Option<impl Drop> {
     use {
         tracing_indicatif::IndicatifLayer,
-        tracing_subscriber::{fmt, layer::SubscriberExt, prelude::*, util::SubscriberInitExt, EnvFilter},
+        tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, prelude::*, util::SubscriberInitExt},
     };
     match logging_mode {
         LoggingMode::Flamegraph => {
@@ -252,7 +266,9 @@ fn async_main() -> Result<()> {
                 .context("reading test file")
                 .and_then(|input| modlist_json::parsing_helpers::validate_modlist_file(&input))
                 .with_context(|| format!("testing file {}", path.display())),
-            Commands::ModlistInfo { path } => wabbajack_file::WabbajackFile::load_wabbajack_file(path)
+            Commands::ModlistInfo { path } => path
+                .exists_utf8()
+                .and_then(|path| wabbajack_file::WabbajackFile::load_wabbajack_file(&path))
                 .context("reading modlist")
                 .map(|(_, modlist)| ModlistSummary::new(&modlist.modlist))
                 .map(|modlist| modlist.print())
@@ -274,7 +290,9 @@ fn async_main() -> Result<()> {
                     .map(|count| println!("successfully installed [{}] mods", count.len()))
             }
             Commands::HoolamikeDebug(HoolamikeDebug { command }) => match command {
-                HoolamikeDebugCommand::ReserializeDirectives { modlist_file } => wabbajack_file::WabbajackFile::load_wabbajack_file(modlist_file)
+                HoolamikeDebugCommand::ReserializeDirectives { modlist_file } => modlist_file
+                    .exists_utf8()
+                    .and_then(|modlist_file| wabbajack_file::WabbajackFile::load_wabbajack_file(&modlist_file))
                     .context("loading modlist file")
                     .and_then(|modlist| {
                         modlist

@@ -1,0 +1,23 @@
+[[language]]
+auto-format = true
+name = "rust"
+
+[[language]]
+auto-format = true
+name = "nix"
+
+[[language]]
+auto-format = true
+name = "toml"
+
+[language-server.rust-analyzer]
+command = "rust-analyzer"
+
+[language-server.rust-analyzer.config]
+cargo = { loadOutDirsFromCheck = true }      # THIS IS CRITICAL
+cachePriming = { enable = true }
+check = { command = "check", enable = true } # <-- change from clippy
+checkOnSave = true                           # <-- change from clippy
+procMacro = { enable = true }
+inlayHints = { enable = true }
+lens = { enable = true }

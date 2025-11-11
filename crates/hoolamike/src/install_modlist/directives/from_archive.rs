@@ -5,6 +5,7 @@ use {
         modlist_json::directive::FromArchiveDirective,
         progress_bars_v2::IndicatifWrapIoExt,
         read_wrappers::ReadExt,
+        utils::ExistingPathRead,
     },
     preheat_archive_hash_paths::PreheatedArchiveHashPaths,
     std::{
@@ -17,7 +18,7 @@ use {
 #[derive(Clone, derivative::Derivative)]
 #[derivative(Debug)]
 pub struct FromArchiveHandler {
-    pub output_directory: PathBuf,
+    pub output_directory: ExistingPathBuf,
     #[derivative(Debug = "ignore")]
     pub download_summary: DownloadSummary,
 }
@@ -57,7 +58,11 @@ impl FromArchiveHandler {
             .with_context(|| format!("looking up archive in preheaded archives using hash [{archive_hash_path:?}]"))
             .context("finding source file")?;
 
-        let output_path = self.output_directory.join(to.into_path());
+        let output_path = self
+            .output_directory
+            .as_path()
+            .join_checked(to.as_path())
+            .with_context(|| format!("joining {to} to output directory"))?;
 
         let perform_copy = move |from: &mut dyn Read, to: &mut dyn Write, target_path: PathBuf| {
             info_span!("perform_copy").in_scope(|| {
@@ -83,17 +88,15 @@ impl FromArchiveHandler {
         };
 
         source_file
-            .open_file_read()
+            .exists()
+            .and_then(|source_file| source_file.open_file_read())
             .and_then(|(source_path, mut final_source)| {
-                create_file_all(&output_path).and_then(|mut output_file| {
-                    perform_copy(&mut final_source, &mut output_file, output_path.clone()).with_context(|| {
-                        format!(
-                            "when extracting from [{source_path:?}] ({:?}) to [{}]",
-                            archive_hash_path,
-                            output_path.display()
-                        )
+                output_path
+                    .open_file_write()
+                    .and_then(|(_, mut output_file)| {
+                        perform_copy(&mut final_source, &mut output_file, output_path.clone().into_string().pipe(PathBuf::from))
+                            .with_context(|| format!("when extracting from [{source_path:?}] ({:?}) to [{}]", archive_hash_path, output_path))
                     })
-                })
             })
             .map(|_| size)
     }
