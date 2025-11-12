@@ -198,7 +198,7 @@ pub mod nested_archive_directives;
 impl DownloadSummary {
     fn resolve_archive_path(&self, ArchiveHashPath { source_hash, path }: &ArchiveHashPath) -> Result<NonEmpty<CaseInsensitivePathBuf>> {
         self.get(source_hash)
-            .with_context(|| format!("no [{source_hash}] in downloads"))
+            .with_context(|| format!("no [{source_hash}] in downloads:\n{:#?}", self))
             .map(|parent| NonEmpty::new(parent.inner.clone()).tap_mut(|resolved| resolved.extend(path.clone())))
     }
 }

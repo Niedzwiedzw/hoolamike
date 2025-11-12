@@ -32,7 +32,7 @@ pub mod directives;
 pub mod download_cache;
 pub mod downloads;
 
-#[instrument]
+#[instrument(fields(at=%at))]
 fn setup_texconv_wine(
     at: &ExistingPath,
     texconv_wine::ExtensionConfig { wine_path, texconv_path }: texconv_wine::ExtensionConfig,
@@ -207,7 +207,20 @@ pub fn install_modlist(
                     .map_err(|e| vec![e])
                     .pipe(ready)
                     .boxed_local(),
-                false => synchronizers.clone().sync_downloads(archives).boxed_local(),
+                false => synchronizers
+                    .clone()
+                    .sync_downloads(archives.pipe(|archives| {
+                        archives
+                            .into_iter()
+                            .filter(|a| {
+                                contains.is_empty()
+                                    || serde_json::to_string(a)
+                                        .unwrap()
+                                        .pipe_deref(|a| contains.iter().any(|needle| a.contains(needle)))
+                            })
+                            .collect_vec()
+                    }))
+                    .boxed_local(),
             }
             .pipe(|tasks| {
                 tokio_runtime_multi(concurrency())

@@ -1,5 +1,4 @@
 #![allow(clippy::unit_arg)]
-
 use {
     ::case_insensitive_path::{self as path},
     anyhow::{Context, Result},
@@ -287,7 +286,7 @@ fn async_main() -> Result<()> {
 
                         anyhow::anyhow!("could not finish installation due to [{}] errors", errors.len())
                     })
-                    .map(|count| println!("successfully installed [{}] mods", count.len()))
+                    .map(|count| info!("successfully installed [{}] mods", count.len()))
             }
             Commands::HoolamikeDebug(HoolamikeDebug { command }) => match command {
                 HoolamikeDebugCommand::ReserializeDirectives { modlist_file } => modlist_file
@@ -313,17 +312,13 @@ fn async_main() -> Result<()> {
             }
             Commands::HandleNxm(handle_nxm_cli) => {
                 let (_config_path, config) = config_file::HoolamikeConfig::read(&hoolamike_config).context("reading hoolamike config file")?;
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .context("cannot create runtime builder")
-                    .and_then(|runtime| runtime.block_on(nxm_handler::run(config, handle_nxm_cli)))
+                tokio_runtime_multi(4).and_then(|rt| rt.block_on(nxm_handler::run(config, handle_nxm_cli)))
             }
             Commands::DownloadWabbajackCdn(download) => tokio_runtime_multi(num_cpus::get())
                 .and_then(move |runtime| runtime.block_on(download.download()))
                 .map(|output| info!("{}", output.display())),
         },
-        (None, Some(nxm_link)) => tokio_runtime_single().and_then(|r| r.block_on(nxm_handler::handle_nxm_link(nxm_link_handler_port, nxm_link))),
+        (None, Some(nxm_link)) => tokio_runtime_multi(4).and_then(|r| r.block_on(nxm_handler::handle_nxm_link(nxm_link_handler_port, nxm_link))),
 
         (None, None) => crate::gui::run(cli),
         // _ => Cli::command()
@@ -337,7 +332,17 @@ fn async_main() -> Result<()> {
         )
     })
     .tap_err(|e| {
-        tracing::error!("\n\n{e:?}");
+        drop(_guard);
+
+        eprintln!(" --- ");
+        eprintln!(" --- ");
+        eprintln!(" --- ");
+        eprintln!(" --- ");
+        eprintln!("\n\n{e:?}");
+        eprintln!(" --- ");
+        eprintln!(" --- ");
+        eprintln!(" --- ");
+        eprintln!(" --- ");
     })
 }
 

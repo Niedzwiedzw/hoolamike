@@ -1,8 +1,14 @@
 use {
     crate::utils::{IteratorTryFindMap, ResultZipExt},
     anyhow::{Context, Result},
-    std::{borrow::Borrow, ops::Deref, str::FromStr},
+    std::{
+        borrow::Borrow,
+        collections::{BTreeMap, HashSet},
+        ops::Deref,
+        str::FromStr,
+    },
     tap::{Pipe, Tap},
+    tracing::trace,
     typed_path::{Utf8Path, Utf8PlatformEncoding, Utf8PlatformPath, Utf8PlatformPathBuf, Utf8TypedPath, Utf8TypedPathBuf, Utf8UnixPathBuf, Utf8WindowsPathBuf},
 };
 
@@ -172,52 +178,68 @@ impl CaseInsensitivePathBuf {
         self.exists()
             .and_then(|exists| exists.with_context(|| format!("path {self} does not exist")))
     }
+    #[tracing::instrument(skip(self))]
     pub fn exists(&self) -> Result<Option<ExistingPathBuf>> {
-        self.native.pipe_ref(|native| {
-            let mut components = native.iter().map(|c| c.to_lowercase());
-            match native.is_absolute() {
-                false => typed_path::utils::utf8_current_dir()
-                    .context("reading current directory as utf8")
-                    .map(Some),
-                true => components
-                    .next()
-                    .map(|root| Utf8PlatformPathBuf::new().tap_mut(|p| p.push(root)))
-                    .pipe(Ok),
-            }
-            .and_then(|root| {
-                root.map(|root| {
-                    components.try_fold(Some(root), |cwd, next_component| {
-                        cwd.context("bad cwd").and_then(|cwd| {
-                            std::fs::read_dir(std::path::Path::new(cwd.as_str()))
-                                .context("reading current directory")
-                                .and_then(|mut entries| {
-                                    entries
-                                        .try_find_map(|d| {
-                                            d.context("bad entry").map(|e| {
-                                                e.path()
-                                                    .file_name()
-                                                    .expect("must be normalized at this point")
-                                                    .to_string_lossy()
-                                                    .pipe_deref(|entry| {
-                                                        entry.eq(&next_component).then(|| {
-                                                            cwd.clone()
-                                                                .tap_mut(|cwd| cwd.push_checked(entry).expect("checked path failed"))
-                                                        })
+        trace!(path=%self, "checking for existance");
+        self.lowercase
+            .pipe_ref(|lowercase| {
+                let mut components = lowercase.iter();
+
+                match lowercase
+                    .is_absolute()
+                    .tap(|is_absolute| trace!(%is_absolute))
+                {
+                    false => typed_path::utils::utf8_current_dir()
+                        .context("reading current directory as utf8")
+                        .map(Some),
+                    true => components
+                        .next()
+                        .map(|root| Utf8PlatformPathBuf::new().tap_mut(|p| p.push(root)))
+                        .pipe(Ok),
+                }
+                .context("resolving root")
+                .and_then(|root| root.context("root must be present"))
+                .and_then(|root| {
+                    trace!(%root);
+                    components
+                        .try_fold(Some(root.clone()), |cwd, next_component| {
+                            trace!(?root, ?cwd, %next_component);
+                            cwd.clone()
+                                .context("cwd must be present")
+                                .and_then(|cwd| {
+                                    trace!(%cwd);
+                                    std::fs::read_dir(std::path::Path::new(cwd.as_str()))
+                                        .context("reading current directory")
+                                        .and_then(|entries| {
+                                            entries
+                                                .into_iter()
+                                                .map(|e| {
+                                                    e.context("bad entry").and_then(|e| {
+                                                        e.path()
+                                                            .file_name()
+                                                            .context("path should be normalized at this point")
+                                                            .map(|e| {
+                                                                e.to_string_lossy()
+                                                                    .pipe(|c| (c.to_lowercase(), c.to_string()))
+                                                            })
                                                     })
+                                                })
+                                                .collect::<Result<BTreeMap<_, _>>>()
+                                        })
+                                        .map(|mut entries| {
+                                            trace!(?entries, %next_component, "comparing");
+                                            entries.remove(next_component).map(|entry| {
+                                                cwd.clone()
+                                                    .tap_mut(|cwd| cwd.push_checked(entry).expect("checked path failed"))
                                             })
                                         })
-                                        .context("finding matching path")
                                 })
-                                .transpose()
-                                .transpose()
+                                .with_context(|| format!("root={root} cwd={cwd:?} next=component={next_component}"))
                         })
-                    })
+                        .map(|o| o.map(ExistingPathBuf::new_native_unchecked))
                 })
-                .transpose()
-                .map(|o| o.flatten().map(ExistingPathBuf::new_native_unchecked))
-                .context("crawling the directory tree to case-insensitively match on the path")
             })
-        })
+            .with_context(|| format!("checking if [{self}] exists"))
     }
 
     pub fn join_case_insensitive(&self, other: Self) -> Result<Self> {
@@ -328,8 +350,10 @@ impl FromStr for CaseInsensitivePathBuf {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let original = Utf8TypedPath::derive(s).normalize();
-        Utf8TypedPathBuf::from(original.as_str().to_lowercase())
+        // yes, we're gonna assume windows. this is only valid for this project.
+        // if you need this open an issue and we'll figure something out
+        let original = Utf8TypedPath::windows(&s).normalize();
+        Utf8TypedPath::windows(&original.as_str().to_lowercase())
             .into_unix_encoding_checked()
             .context("normalizing to unix encoding for comparison")
             .zip(
@@ -356,7 +380,7 @@ impl FromStr for CaseInsensitivePathBuf {
 
 impl std::fmt::Display for CaseInsensitivePathBuf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.original.as_str().fmt(f)
+        self.native.as_str().fmt(f)
     }
 }
 
@@ -366,12 +390,13 @@ impl<P: AsRef<std::path::Path>> P {
         ExistingPathBuf::new(self.as_ref())
     }
 
-    #[allow(async_fn_in_trait)]
     /// TODO: placeholder
+    #[allow(async_fn_in_trait)]
     #[cfg(feature = "tokio")]
     async fn exists_utf8_async(&self) -> anyhow::Result<ExistingPathBuf> {
         ::tokio::task::block_in_place(|| self.exists_utf8())
     }
+
     fn utf8_platform_path(&self) -> anyhow::Result<Utf8PlatformPathBuf> {
         let path: &std::path::Path = self.as_ref();
         String::from_utf8(path.as_os_str().as_encoded_bytes().to_vec())
@@ -435,5 +460,56 @@ mod serde {
         {
             String::deserialize(deserializer).and_then(|string| string.parse::<Self>().map_err(serde::de::Error::custom))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, test_log::test};
+
+    #[test]
+    fn test_assumed_windows_path_1() -> Result<()> {
+        let parsed = CaseInsensitivePathBuf::from_str("Data\\Fallout - Voices1.bsa")?;
+        assert!(parsed.original.is_windows());
+        assert!(parsed.native.is_valid());
+        assert!(parsed.lowercase.is_valid());
+        Ok(())
+    }
+
+    #[test]
+    fn test_example_dir() -> Result<()> {
+        let _cwd = tempfile::tempdir()?;
+        let cwd = _cwd.exists_utf8()?;
+
+        let (lowercase, _file) = cwd.join_new("a").and_then(|lowercase| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&lowercase)
+                .with_context(|| format!("opening {lowercase}"))
+                .map(|f| (lowercase, f))
+                .and_then(|(path, f)| path.exists_utf8().map(|path| (path, f)))
+        })?;
+
+        let uppercase = lowercase
+            .as_path()
+            .as_str()
+            .to_string()
+            .tap_mut(|t| {
+                *t = t
+                    .chars()
+                    .collect::<Vec<_>>()
+                    .tap_mut(|c| c.last_mut().unwrap().pipe(|c| *c = c.to_ascii_uppercase()))
+                    .into_iter()
+                    .collect::<String>()
+            })
+            .utf8_platform_path()
+            .context("uppercase")?;
+
+        uppercase
+            .case_insensitive_utf8()
+            .and_then(|uppercase| uppercase.try_exists())
+            .map(|_| ())
     }
 }

@@ -1034,7 +1034,10 @@ dependencies = [
  "normalize-path",
  "serde",
  "tap",
+ "tempfile",
+ "test-log",
  "tokio",
+ "tracing",
  "typed-path",
 ]
 

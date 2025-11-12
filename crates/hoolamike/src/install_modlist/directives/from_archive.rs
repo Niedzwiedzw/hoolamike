@@ -56,13 +56,15 @@ impl FromArchiveHandler {
             .with_context(|| format!("resolving hash path [{archive_hash_path:?}]"))
             .and_then(|path| preheated.get_archive(path))
             .with_context(|| format!("looking up archive in preheaded archives using hash [{archive_hash_path:?}]"))
-            .context("finding source file")?;
+            .context("finding source file")
+            .with_context(|| format!("handling directive: {self:#?}"))?;
 
         let output_path = self
             .output_directory
             .as_path()
             .join_checked(to.as_path())
-            .with_context(|| format!("joining {to} to output directory"))?;
+            .with_context(|| format!("joining {to} to output directory"))
+            .with_context(|| format!("handling directive: {self:#?}"))?;
 
         let perform_copy = move |from: &mut dyn Read, to: &mut dyn Write, target_path: PathBuf| {
             info_span!("perform_copy").in_scope(|| {

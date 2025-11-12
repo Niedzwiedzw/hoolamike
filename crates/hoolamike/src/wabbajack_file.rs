@@ -2,9 +2,7 @@ use {
     crate::{compression::ProcessArchive, install_modlist::directives::wabbajack_file_handle::WabbajackFileHandle, utils::ExistingPathRead},
     anyhow::{Context, Result},
     case_insensitive_path::{CaseInsensitivePathBuf, ExistingPath, ExistingPathBuf},
-    std::{
-        io::Read, str::FromStr,
-    },
+    std::{io::Read, str::FromStr},
     tap::prelude::*,
 };
 
@@ -28,7 +26,11 @@ impl WabbajackFile {
             .and_then(|mut archive| {
                 archive.list_paths().and_then(|entries| {
                     archive
-                        .get_handle(&MODLIST_JSON_FILENAME.pipe(CaseInsensitivePathBuf::from_str).expect("bad modlist json filename"))
+                        .get_handle(
+                            &MODLIST_JSON_FILENAME
+                                .pipe(CaseInsensitivePathBuf::from_str)
+                                .expect("bad modlist json filename"),
+                        )
                         .context("looking up file by name")
                         .and_then(|mut handle| {
                             String::new()
@@ -50,7 +52,7 @@ impl WabbajackFile {
                 })
             })
     }
-    #[tracing::instrument]
+    #[tracing::instrument(fields(at_path=%at_path))]
     pub fn load_wabbajack_file(at_path: &ExistingPath) -> Result<(WabbajackFileHandle, Self)> {
         Self::load_modlist_json(at_path).and_then(|data| WabbajackFileHandle::from_archive(at_path).map(|archive| (archive, data)))
     }

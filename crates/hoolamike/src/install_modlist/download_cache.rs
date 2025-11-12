@@ -38,7 +38,7 @@ async fn read_file_size(path: &ExistingPathBuf) -> Result<u64> {
         .await
 }
 
-#[tracing::instrument]
+#[tracing::instrument(fields(path=%path))]
 async fn calculate_hash_wabbajack(path: &ExistingPath) -> Result<u64> {
     let size = tokio::fs::metadata(&path)
         .await
@@ -73,7 +73,7 @@ async fn calculate_hash_wabbajack(path: &ExistingPath) -> Result<u64> {
     Ok(hasher.finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(fields(path=%path))]
 async fn calculate_hash_sha512(path: &ExistingPath) -> Result<[u8; 64]> {
     let size = tokio::fs::metadata(&path)
         .await

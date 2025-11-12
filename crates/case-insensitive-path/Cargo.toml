@@ -21,3 +21,8 @@ normalize-path.workspace = true
 serde.workspace = true
 tap.workspace = true
 typed-path.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+test-log = { workspace = true, features = ["trace"] }
