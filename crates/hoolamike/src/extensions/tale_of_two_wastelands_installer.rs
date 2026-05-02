@@ -220,7 +220,14 @@ impl FullLocation {
                                 .with_context(|| format!("copying into [{target_path:#?}]"))
                                 .map(|wrote| tracing::info!(?target_path, "wrote [{wrote}bytes]"))
                         })
-                        .map(|_| None),
+                        .map(|_| None)
+                        .pipe(|r| match r {
+                            Ok(v) => Ok(v),
+                            Err(error) => {
+                                tracing::error!("{error:?}");
+                                Ok(None)
+                            }
+                        }),
                     Location::ReadArchive(read_archive) => {
                         anyhow::bail!("cannot insert into Location::ReadArchive({read_archive:#?})")
                     }
