@@ -197,7 +197,7 @@ impl FullLocation {
             .and_then(|location| {
                 (match location {
                     Location::Folder(WithKindGuard {
-                        inner: FolderLocation { create_folder: false, .. },
+                        inner: FolderLocation { create_folder: true, .. },
                         ..
                     }) => Ok(None),
                     Location::Folder(folder) => folder
