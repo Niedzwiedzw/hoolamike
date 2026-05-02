@@ -70,7 +70,7 @@ impl AssetContext {
                 preheated_mpi_file
                     .paths
                     .get(&target.path.0)
-                    .with_context(|| format!("no [{source:?}] in mpi file:\n{:#?}", preheated_mpi_file.paths))
+                    .with_context(|| format!("no [{source:?}] in mpi file"))
                     .context("reading patch file")
                     .and_then(|patch_file| {
                         source
