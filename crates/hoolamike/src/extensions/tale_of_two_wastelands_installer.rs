@@ -200,6 +200,16 @@ impl FullLocation {
                         inner: FolderLocation { create_folder: true, .. },
                         ..
                     }) => Ok(None),
+                    Location::Folder(folder)
+                        if folder
+                            .inner
+                            .value
+                            .pipe_deref(CaseInsensitivePathBuf::from_str)?
+                            .exists()?
+                            .is_some() =>
+                    {
+                        Ok(None)
+                    }
                     Location::Folder(folder) => folder
                         .inner
                         .value
