@@ -10,6 +10,7 @@ use {
     anyhow::{Context, Result},
     hoola_audio::Mp3TargetChannelMode,
     std::{collections::BTreeMap, io::BufReader, sync::Arc},
+    tap::Pipe,
     tracing::instrument,
 };
 
@@ -221,5 +222,12 @@ impl AssetContext {
                     })
             }
         }
+        .pipe(|res| match res {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                tracing::error!("{e:?}");
+                Ok(None)
+            }
+        })
     }
 }
