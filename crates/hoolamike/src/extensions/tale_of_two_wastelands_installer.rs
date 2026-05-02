@@ -220,14 +220,7 @@ impl FullLocation {
                                 .with_context(|| format!("copying into [{target_path:#?}]"))
                                 .map(|wrote| tracing::info!(?target_path, "wrote [{wrote}bytes]"))
                         })
-                        .map(|_| None)
-                        .pipe(|r| match r {
-                            Ok(v) => Ok(v),
-                            Err(error) => {
-                                tracing::error!("{error:?}");
-                                Ok(None)
-                            }
-                        }),
+                        .map(|_| None),
                     Location::ReadArchive(read_archive) => {
                         anyhow::bail!("cannot insert into Location::ReadArchive({read_archive:#?})")
                     }
@@ -250,6 +243,13 @@ impl FullLocation {
                     }
                 })
                 .with_context(|| format!("handling {location:?}"))
+                .pipe(|r| match r {
+                    Ok(v) => Ok(v),
+                    Err(error) => {
+                        tracing::error!("{error:?}");
+                        Ok(None)
+                    }
+                })
             })
     }
     fn into_reader(self, context: AssetContext) -> Result<Box<dyn Read>> {
