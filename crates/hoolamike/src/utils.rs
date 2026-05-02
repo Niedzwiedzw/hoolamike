@@ -126,7 +126,10 @@ impl ExistingPath {
 }
 
 #[extension_traits::extension(pub(crate) trait PathReadWrite)]
-impl<T: AsRef<std::path::Path>> T {
+impl<T> T
+where
+    T: AsRef<std::path::Path> + std::fmt::Debug,
+{
     fn create_dir(&self) -> anyhow::Result<ExistingPathBuf> {
         let at = self.as_ref();
         std::fs::create_dir_all(at)
@@ -136,24 +139,26 @@ impl<T: AsRef<std::path::Path>> T {
     }
 
     fn open_file_write(&self) -> anyhow::Result<(ExistingPathBuf, std::fs::File)> {
-        debug_span!("open_file_read", path=%self.as_ref().display()).in_scope(|| {
-            Ok(()).and_then(|_| {
-                if let Some(parent) = self.as_ref().parent() {
-                    std::fs::create_dir_all(parent).context("creating full path for output file")?;
-                }
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(self)
-                    .with_context(|| format!("opening file for writing at [{}]", self.as_ref().display()))
-                    .and_then(|file| {
-                        self.as_ref()
-                            .pipe(ExistingPathBuf::new)
-                            .map(|path| (path, file))
-                    })
+        debug_span!("open_file_read", path=%self.as_ref().display())
+            .in_scope(|| {
+                Ok(()).and_then(|_| {
+                    if let Some(parent) = self.as_ref().parent() {
+                        std::fs::create_dir_all(parent).context("creating full path for output file")?;
+                    }
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(self)
+                        .with_context(|| format!("opening file for writing at [{}]", self.as_ref().display()))
+                        .and_then(|file| {
+                            self.as_ref()
+                                .pipe(ExistingPathBuf::new)
+                                .map(|path| (path, file))
+                        })
+                })
             })
-        })
+            .with_context(|| format!("opening file for writing at {self:?}"))
     }
 }
 

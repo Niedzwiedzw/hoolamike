@@ -193,38 +193,41 @@ impl FullLocation {
             .get(&self.location)
             .with_context(|| format!("no location for {self:#?}"))
             .inspect(|location| tracing::debug!("{location:#?}"))
-            .and_then(|location| match location {
-                Location::Folder(folder) => folder
-                    .inner
-                    .value
-                    .pipe_deref(CaseInsensitivePathBuf::from_str)
-                    .and_then(|file| file.as_path().open_file_write())
-                    .and_then(|(target_path, mut target_file)| {
-                        std::io::copy(from_reader, &mut target_file)
-                            .with_context(|| format!("copying into [{target_path:#?}]"))
-                            .map(|wrote| tracing::info!(?target_path, "wrote [{wrote}bytes]"))
-                    })
-                    .map(|_| None),
-                Location::ReadArchive(read_archive) => {
-                    anyhow::bail!("cannot insert into Location::ReadArchive({read_archive:#?})")
-                }
-                Location::WriteArchive(write_archive) => {
-                    let archive_path = self.path.0.clone();
-                    scoped_temp_file()
-                        .and_then(|mut buffer| {
-                            std::io::copy(from_reader, &mut buffer)
-                                .context("copying into buffer")
-                                .map(|_| buffer)
+            .and_then(|location| {
+                (match location {
+                    Location::Folder(folder) => folder
+                        .inner
+                        .value
+                        .pipe_deref(CaseInsensitivePathBuf::from_str)
+                        .and_then(|file| file.as_path().open_file_write())
+                        .and_then(|(target_path, mut target_file)| {
+                            std::io::copy(from_reader, &mut target_file)
+                                .with_context(|| format!("copying into [{target_path:#?}]"))
+                                .map(|wrote| tracing::info!(?target_path, "wrote [{wrote}bytes]"))
                         })
-                        .map(|buffer| buffer.into_temp_path())
-                        .map(|buffer| {
-                            Some(LazyArchiveChunk {
-                                target: write_archive.inner.clone(),
-                                key: archive_path,
-                                buffer,
+                        .map(|_| None),
+                    Location::ReadArchive(read_archive) => {
+                        anyhow::bail!("cannot insert into Location::ReadArchive({read_archive:#?})")
+                    }
+                    Location::WriteArchive(write_archive) => {
+                        let archive_path = self.path.0.clone();
+                        scoped_temp_file()
+                            .and_then(|mut buffer| {
+                                std::io::copy(from_reader, &mut buffer)
+                                    .context("copying into buffer")
+                                    .map(|_| buffer)
                             })
-                        })
-                }
+                            .map(|buffer| buffer.into_temp_path())
+                            .map(|buffer| {
+                                Some(LazyArchiveChunk {
+                                    target: write_archive.inner.clone(),
+                                    key: archive_path,
+                                    buffer,
+                                })
+                            })
+                    }
+                })
+                .with_context(|| format!("handling {location:?}"))
             })
     }
     fn into_reader(self, context: AssetContext) -> Result<Box<dyn Read>> {

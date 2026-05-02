@@ -1,8 +1,6 @@
 use {
     super::{
-        LazyArchiveChunk,
-        RepackingContext,
-        SeekWithTempFileExt,
+        LazyArchiveChunk, RepackingContext, SeekWithTempFileExt,
         manifest_file::asset::{Asset, CopyAsset, LocationIndex, NewAsset, PatchAsset},
     },
     crate::{
@@ -40,6 +38,7 @@ impl AssetContext {
                     .with_context(|| format!("no [{source:?}] in mpi file"))
                     .and_then(|path| path.open_file_read())
                     .and_then(|(_, handle)| target.insert_into(self.repacking_context.clone(), &mut BufReader::new(handle)))
+                    .with_context(|| format!("handling with target: {target:?}"))
             }
             Asset::Copy(CopyAsset {
                 tags: _,
