@@ -2,6 +2,7 @@ use {
     crate::{
         compression::{ProcessArchive, SeekWithTempFileExt, preheated_archive::PreheatedArchive},
         config_file::HoolamikeConfig,
+        extensions::tale_of_two_wastelands_installer::manifest_file::location::FolderLocation,
         modlist_json::GameName,
         progress_bars_v2::{IndicatifWrapIoExt, count_progress_style},
         utils::{ExistingPathRead, PathReadWrite, ReadableCatchUnwindExt, scoped_temp_file},
@@ -195,6 +196,10 @@ impl FullLocation {
             .inspect(|location| tracing::debug!("{location:#?}"))
             .and_then(|location| {
                 (match location {
+                    Location::Folder(WithKindGuard {
+                        inner: FolderLocation { create_folder: false, .. },
+                        ..
+                    }) => Ok(None),
                     Location::Folder(folder) => folder
                         .inner
                         .value

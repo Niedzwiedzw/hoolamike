@@ -1,12 +1,7 @@
 use {
-    crate::utils::{IteratorTryFindMap, ResultZipExt},
+    crate::utils::ResultZipExt,
     anyhow::{Context, Result},
-    std::{
-        borrow::Borrow,
-        collections::{BTreeMap, HashSet},
-        ops::Deref,
-        str::FromStr,
-    },
+    std::{borrow::Borrow, collections::BTreeMap, ops::Deref, str::FromStr},
     tap::{Pipe, Tap},
     tracing::trace,
     typed_path::{Utf8Path, Utf8PlatformEncoding, Utf8PlatformPath, Utf8PlatformPathBuf, Utf8TypedPath, Utf8TypedPathBuf, Utf8UnixPathBuf, Utf8WindowsPathBuf},

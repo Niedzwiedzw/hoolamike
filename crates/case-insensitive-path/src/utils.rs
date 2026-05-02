@@ -5,6 +5,7 @@ impl<T, E> std::result::Result<T, E> {
     }
 }
 
+#[allow(dead_code)]
 pub trait IteratorTryFindMap: Iterator {
     /// Applies a fallible function to each item and returns the first `Ok(Some(value))`.
     /// Returns `Ok(None)` if no item produced a `Some`, or the first `Err` encountered.

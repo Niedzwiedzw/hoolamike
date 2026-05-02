@@ -1,3 +1,5 @@
+#![allow(future_incompatible)]
+
 use {
     anyhow::{Context, Result},
     ba2::{ByteSlice, Reader, fo4::FileWriteOptions},
